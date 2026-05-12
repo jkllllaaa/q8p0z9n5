@@ -1,0 +1,6575 @@
+<template>
+	<view class="twitter-container" :class="{ 'dark-mode': isDarkMode }">
+		<!-- 顶部导航栏 -->
+		<view class="top-navbar">
+			<!-- 左侧Logo -->
+			<view class="logo">
+				<text class="logo-text">风花堂 - 外门</text>
+			</view>
+
+			<!-- 中间搜索框 -->
+			<view class="search-box">
+				<input type="text" v-model="tagInput" placeholder="输入搜索内容..." @confirm="addSearchTag"
+					@focus="showSearchHistory = true" @blur="hideSearchHistoryDelayed" class="search-input" />
+				<text class="search-icon search-icon-title" @click="searchByTitle" title="标题搜索">🔍</text>
+				<text class="search-icon search-icon-tag" @click="addSearchTag" title="标签搜索">#</text>
+				<view v-if="showSearchHistory && searchHistory.length > 0" class="search-history-dropdown">
+					<view class="search-history-header">
+						<text class="search-history-title">搜索历史</text>
+						<text class="search-history-clear" @click="clearSearchHistory">清空</text>
+					</view>
+					<view v-for="(item, hIdx) in searchHistory" :key="hIdx" class="search-history-item"
+						@mousedown.prevent="selectHistory(item)">
+						<text>{{ item }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 右侧操作区 -->
+			<view class="top-actions">
+				<view class="action-btn" @click="handleRefresh" title="刷新">
+					<text class="icon">🔄</text>
+				</view>
+				<view class="action-btn" @click="handleReset" title="重置">
+					<text class="icon">↺</text>
+				</view>
+				<view v-if="!isGuestMode" class="action-btn" @click="switchMenu('messages')">
+					<text class="icon">🔔</text>
+					<view v-if="unreadNotifyCount > 0" class="badge">{{ unreadNotifyCount }}</view>
+				</view>
+				<view v-if="!isGuestMode" class="action-btn" @click="switchMenu('messages')">
+					<text class="icon">💬</text>
+					<view v-if="unreadMessageCount > 0" class="badge">{{ unreadMessageCount }}</view>
+				</view>
+				<view v-if="!isGuestMode" class="action-btn publish-btn" @click="showPublishModal = true">
+					<text class="icon">✏️</text>
+				</view>
+				<view v-if="!isGuestMode" class="user-info" @click="switchMenu('profile')">
+					<image :src="userInfo.head" class="user-avatar" mode="aspectFill"></image>
+					<view class="user-detail">
+						<text class="user-nickname">{{ userInfo.nickname }}</text>
+						<text class="user-level">Lv.{{ userInfo.grade }}</text>
+					</view>
+				</view>
+				<view v-if="isGuestMode" class="user-info" @click="guestGuard()">
+					<image :src="userInfo.head" class="user-avatar" mode="aspectFill"></image>
+					<view class="user-detail">
+						<text class="user-nickname">{{ userInfo.nickname }}</text>
+						<text class="user-level">Lv.{{ userInfo.grade }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 主体内容区 -->
+		<view class="main-content">
+			<!-- 左侧导航栏 -->
+			<view class="left-sidebar">
+				<view class="menu-item" :class="{ active: activeMenu === 'home' }" @click="switchMenu('home')">
+					<text class="menu-icon">🏠</text>
+					<text class="menu-text">主页</text>
+				</view>
+				<!-- <view v-if="!isGuestMode" class="menu-item" :class="{ active: activeMenu === 'publish' }" @click="guestGuard() || (showPublishModal = true)">
+					<text class="menu-icon">✏️</text>
+					<text class="menu-text">发布推文</text>
+				</view> -->
+				<view v-if="!isGuestMode" class="menu-item" :class="{ active: activeMenu === 'myTweets' }" @click="switchMenu('myTweets')">
+					<text class="menu-icon">📝</text>
+					<text class="menu-text">我的推文</text>
+				</view>
+				<view v-if="!isGuestMode" class="menu-item" :class="{ active: activeMenu === 'likes' }" @click="switchMenu('likes')">
+					<text class="menu-icon">❤️</text>
+					<text class="menu-text">我喜欢的</text>
+				</view>
+				<view v-if="!isGuestMode" class="menu-item" :class="{ active: activeMenu === 'messages' }" @click="switchMenu('messages')">
+					<text class="menu-icon">💬</text>
+					<text class="menu-text">消息</text>
+					<view v-if="unreadMessageCount > 0" class="menu-badge">{{ unreadMessageCount }}</view>
+				</view>
+				<view v-if="!isGuestMode" class="menu-item" :class="{ active: activeMenu === 'profile' }" @click="switchMenu('profile')">
+					<text class="menu-icon">👤</text>
+					<text class="menu-text">我的</text>
+				</view>
+				<view class="menu-item" :class="{ active: activeMenu === 'settings' }" @click="switchMenu('settings')">
+					<text class="menu-icon">⚙️</text>
+					<text class="menu-text">设置</text>
+				</view>
+				<view v-if="isAdmin" class="menu-item" :class="{ active: activeMenu === 'admin' }" @click="switchMenu('admin')">
+					<text class="menu-icon">🛡️</text>
+					<text class="menu-text">审核</text>
+				</view>
+
+				<!-- 切换内门按钮 -->
+				<view class="switch-door-section">
+					<view v-if="userInfo.grade > 0" class="switch-door-btn" @click="switchToInner">
+						<text class="door-icon">🚪</text>
+						<text class="door-text">进入内门</text>
+					</view>
+					<view v-else class="upgrade-tips">
+						<text class="tips-title">内门资格</text>
+						<text class="tips-item">• 充值 10 元</text>
+						<text class="tips-item">• 发布 5 条图文且审核通过</text>
+						<button class="upgrade-btn" @click="showUpgradeModal = true">立即提升</button>
+					</view>
+				</view>
+			</view>
+
+			<!-- 右侧内容区域 -->
+			<view class="right-content">
+				<!-- 检索标签放置处 -->
+				<view v-if="!currentTweetDetail && ['home', 'myTweets', 'likes'].includes(activeMenu)" class="search-tags-bar">
+					<view class="search-tags-list">
+						<view v-for="(tag, tIdx) in searchtags" :key="tIdx" class="search-tag-chip">
+							<text class="search-tag-text">#{{ tag }}</text>
+							<text class="search-tag-remove" @click="removeSearchTag(tIdx)">×</text>
+						</view>
+					</view>
+					<text v-if="searchtags.length > 0" class="search-tags-clear-all" @click="clearAllTags">清除全部</text>
+				</view>
+				<!-- 推文列表视图 -->
+				<view v-if="!currentTweetDetail && ['home', 'myTweets', 'likes'].includes(activeMenu)"
+					class="tweet-list">
+					<scroll-view scroll-y class="scroll-view" @scrolltolower="loadMore">
+						<view v-for="tweet in currentTweetList" :key="tweet.id" class="tweet-card"
+							@click="viewTweetDetail(tweet)">
+							<!-- 推文头部 -->
+							<view class="tweet-header" @click.stop="goToAuthor(tweet)">
+								<image :src="tweet.cover" class="author-avatar" mode="aspectFill"></image>
+								<view class="author-info">
+									<text class="author-nickname">{{ tweet.nickname }}</text>
+									<text class="author-username">@{{ tweet.username }}</text>
+								</view>
+								<text class="tweet-time">{{ formatTime(tweet.time) }}</text>
+							</view>
+
+							<!-- 推文内容 -->
+							<view class="tweet-content">
+								<text class="tweet-title">{{ tweet.title }}</text>
+
+								<!-- 标签 -->
+								<view v-if="tweet.tags && tweet.tags.length" class="tweet-tags">
+									<text v-for="(tag, tagIndex) in tweet.tags" :key="tagIndex" class="tag-item" @click.stop="clickTag(tag)">
+										#{{ tag }}
+									</text>
+								</view>
+
+								<!-- 媒体展示 -->
+								<view v-if="tweet._mediaItems && tweet._mediaItems.length > 0" class="tweet-images">
+									<view v-for="(media, imgIndex) in tweet._mediaItems.slice(0, 9)" :key="imgIndex"
+										class="tweet-image-wrapper"
+										:class="{ 'video-wrapper': Number(media.Format) === 2 }"
+										@click.stop="Number(media.Format) !== 2 ? previewImage(tweet._mediaItems, imgIndex) : ''">
+										<image v-if="Number(media.Format) !== 2 && !isBilibiliVideo(media.url)" :src="media.url" class="tweet-image" mode="heightFix"></image>
+										<view v-else-if="isBilibiliVideo(media.url)" class="bilibili-video-wrapper">
+											<view v-if="bilibiliActive[imgIndex]">
+												<iframe :src="getBilibiliEmbedUrl(media.url)"
+													class="tweet-video-full" allowfullscreen="true" scrolling="no" frameborder="0"
+													allow="autoplay; fullscreen; encrypted-media"></iframe>
+												<view class="bilibili-mask"></view>
+											</view>
+											<view v-else class="bilibili-play-overlay" @click.stop="activateBilibili(imgIndex)">
+												<text class="bilibili-play-icon">▶</text>
+												<text class="bilibili-play-text">点击播放</text>
+											</view>
+										</view>
+										<video v-else :src="media.url" class="tweet-video-full" controls playsinline
+											:poster="media.url + '?x-oss-process=video/snapshot,t_1000,m_fast'"
+											@mouseenter="playVideo($event)"
+											@mouseleave="pauseVideo($event)"></video>
+									</view>
+									<view v-if="tweet._mediaItems.length > 9" class="more-images">
+										<text>+{{ tweet._mediaItems.length - 9 }}</text>
+									</view>
+								</view>
+
+								<!-- A链接列表 -->
+								<view v-if="tweet.alist && tweet.alist.length > 0" class="tweet-alist">
+									<view v-for="(item, aIdx) in tweet.alist" :key="aIdx" class="tweet-alist-item">
+										<text class="tweet-alist-link" @click.stop="openLink(item.url)">{{ item.title || item.url }}</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 推文操作栏 -->
+							<view class="tweet-actions" @click.stop="">
+								<view class="action-item">
+									<text class="action-icon">💬</text>
+									<text class="action-text">{{ tweet.commentCount || 0 }}</text>
+								</view>
+								<view class="action-item" @click.stop="likeTweet(tweet)">
+									<text class="action-icon">{{ tweet.isLiked ? '❤️' : '🤍' }}</text>
+									<text class="action-text">{{ tweet.likes }}</text>
+								</view>
+								<view class="action-item">
+									<!-- <text class="action-icon">Lv</text> -->
+									<text class="action-text">Lv{{ tweet.level }}</text>
+								</view>
+								<!-- 作者操作：删除/下架/恢复 -->
+								<view v-if="tweet.username === userInfo.username" class="tweet-author-actions">
+									<button v-if="tweet.status === 2" class="author-action-btn off" @click.stop="toggleShelf(tweet)">下架</button>
+									<button v-if="tweet.status === 3" class="author-action-btn on" @click.stop="toggleShelf(tweet)">上架</button>
+									<button class="author-action-btn del" @click.stop="deleteTweet(tweet)">删除</button>
+								</view>
+								<!-- 管理员操作 -->
+								<view v-if="isAdmin && tweet.title" class="tweet-admin-actions">
+									<button class="admin-action-btn" @click.stop="openAdminStatusLevel(tweet)">⚙️</button>
+								</view>
+							</view>
+							<!-- 状态标签（我的推文） -->
+							<view v-if="activeMenu === 'myTweets'" class="tweet-status-badge"
+								:class="'status-' + tweet.status">
+								{{ tweet.status === 2 ? '上架' : tweet.status === 3 ? '下架' : tweet.status === 0 ? '审核失败' : '审核中' }}
+							</view>
+						</view>
+
+						<!-- 加载更多 -->
+						<view class="load-more" v-if="currentHasMore && !isGuestMode">
+							<text>{{ loading ? '加载中...' : '上拉加载更多' }}</text>
+						</view>
+						<view class="no-more" v-else-if="currentTweetList.length > 0">
+							<text>没有更多了</text>
+						</view>
+					</scroll-view>
+				</view>
+
+				<!-- 推文详情视图 -->
+				<view v-if="currentTweetDetail" class="tweet-detail-page">
+					<!-- 返回按钮 -->
+					<view class="detail-header">
+						<view class="back-btn" @click="closeTweetDetail">
+							<text class="back-icon">←</text>
+							<text class="back-text">返回</text>
+						</view>
+					</view>
+
+					<scroll-view scroll-y class="detail-scroll">
+						<!-- 作者信息 -->
+						<view class="detail-author" @click="goToAuthor(currentTweetDetail)">
+							<image :src="currentTweetDetail.cover" class="detail-avatar" mode="aspectFill"></image>
+							<view class="detail-author-info">
+								<text class="detail-nickname">{{ currentTweetDetail.nickname }}</text>
+								<text class="detail-username">@{{ currentTweetDetail.username }}</text>
+								<text class="detail-time">{{ formatTime(currentTweetDetail.time) }}</text>
+							</view>
+						</view>
+
+						<!-- 推文标题 -->
+						<view class="detail-title">{{ currentTweetDetail.title }}</view>
+
+						<!-- 微信卡片风格图片网格 -->
+						<view v-if="currentTweetDetail._mediaItems && currentTweetDetail._mediaItems.length > 0" class="detail-image-grid">
+							<view v-for="(media, index) in currentTweetDetail._mediaItems" :key="index"
+								class="detail-image-item"
+								:class="{ 'detail-video-full-item': Number(media.Format) === 2 }"
+								@click="Number(media.Format) !== 2 ? previewImage(currentTweetDetail._mediaItems, index) : ''">
+								<image v-if="Number(media.Format) !== 2 && !isBilibiliVideo(media.url)" :src="media.url" class="detail-image" mode="widthFix"></image>
+								<view v-else-if="isBilibiliVideo(media.url)" class="bilibili-video-wrapper">
+									<view v-if="bilibiliActiveDetail[index]">
+										<iframe :src="getBilibiliEmbedUrl(media.url)"
+											class="detail-video-full" allowfullscreen="true" scrolling="no" frameborder="0"
+											allow="autoplay; fullscreen; encrypted-media"></iframe>
+										<view class="bilibili-mask"></view>
+									</view>
+									<view v-else class="bilibili-play-overlay" @click.stop="activateBilibiliDetail(index)">
+										<text class="bilibili-play-icon">▶</text>
+										<text class="bilibili-play-text">点击播放</text>
+									</view>
+								</view>
+								<video v-else :src="media.url" class="detail-video-full" controls playsinline
+									:poster="media.url + '?x-oss-process=video/snapshot,t_1000,m_fast'"
+									@mouseenter="playVideo($event)"
+									@mouseleave="pauseVideo($event)"></video>
+							</view>
+						</view>
+
+						<!-- 内容 -->
+						<view v-if="currentTweetDetail.content && currentTweetDetail.content.trim()" class="detail-content">
+							<text>{{ currentTweetDetail.content }}</text>
+						</view>
+
+						<!-- 链接列表 -->
+						<view v-if="currentTweetDetail.alist && currentTweetDetail.alist.length > 0" class="detail-alist">
+							<view v-for="(item, idx) in currentTweetDetail.alist" :key="idx" class="detail-alist-item">
+								<text class="detail-alist-index">{{ idx + 1 }}.</text>
+								<text class="detail-alist-text" @click.stop="openLink(item.url)">{{ item.title || item.url }}</text>
+							</view>
+						</view>
+
+						<!-- 标签 -->
+						<view v-if="currentTweetDetail.tags && currentTweetDetail.tags.length" class="detail-tags">
+							<text v-for="(tag, index) in currentTweetDetail.tags" :key="index" class="detail-tag">
+								#{{ tag }}
+							</text>
+						</view>
+
+						<!-- 操作栏 -->
+						<view class="detail-actions">
+							<view class="action-item" @click="likeTweet(currentTweetDetail)">
+								<text class="action-icon">{{ currentTweetDetail.isLiked ? '❤️' : '🤍' }}</text>
+								<text class="action-text">{{ currentTweetDetail.likes }}</text>
+							</view>
+							<view class="action-item">
+								<text class="action-text">Lv{{ currentTweetDetail.level }}</text>
+							</view>
+						</view>
+
+						<!-- 评论输入框 -->
+						<view class="comment-input-section">
+							<view v-if="replyTo > 0 && replyToComment" class="reply-indicator">
+								<text class="reply-indicator-text">回复 @{{ replyToComment.nickname }}</text>
+								<text class="reply-cancel" @click="cancelReply">取消</text>
+							</view>
+							<view class="comment-input-row">
+								<input type="text" v-model="newComment" placeholder="发表你的看法..." class="comment-input" />
+								<button class="comment-submit" @click="submitComment">发送</button>
+							</view>
+						</view>
+
+						<!-- 评论列表 -->
+						<view class="comments-section">
+							<view class="comments-header">
+								<text class="comments-title">评论 {{ currentTweetDetail.comments || 0 }}</text>
+							</view>
+
+							<view v-for="comment in detailComments" :key="comment._uk || comment.id" class="comment-item">
+								<image :src="comment.cover" class="comment-avatar" mode="aspectFill"></image>
+								<view class="comment-content-wrap">
+									<view class="comment-header">
+										<text class="comment-nickname">{{ comment.nickname }}</text>
+										<text class="comment-time">{{ formatTime(comment.time) }}</text>
+									</view>
+
+									<view class="comment-content">
+										<text v-for="user in comment.mentionUsers" :key="user.username"
+											class="mention-user">
+											@{{ user.nickname }}
+										</text>
+										<text>{{ comment.content }}</text>
+									</view>
+
+									<!-- 评论图片 -->
+									<view v-if="comment.imageUrls && comment.imageUrls.length" class="comment-images">
+										<image v-for="(img, imgIndex) in comment.imageUrls" :key="imgIndex" :src="img"
+											class="comment-image" mode="aspectFill"
+											@click="previewImage(comment.imageUrls, imgIndex)"></image>
+									</view>
+
+									<!-- 评论表情 -->
+									<image v-if="comment.emojiUrl" :src="comment.emojiUrl" class="comment-emoji"
+										mode="aspectFit"></image>
+
+									<!-- 评论操作 -->
+									<view class="comment-actions">
+										<text class="comment-action" @click="likeComment(comment)">
+											{{ comment.isLiked ? '❤️' : '🤍' }} {{ comment.likes }}
+										</text>
+										<text class="comment-action" @click="toggleReplies(comment)">
+											💬 {{ comment.soncount }}
+										</text>
+										<text class="comment-action" @click="replyComment(comment)">
+											回复
+										</text>
+										<text v-if="comment.username === userInfo.username" class="comment-action delete-action" @click="deleteComment(comment)">
+											删除
+										</text>
+									</view>
+
+									<!-- 子评论 -->
+									<view v-if="comment.showReplies" class="replies-section">
+										<view v-for="reply in comment.replies" :key="reply._uk || reply.id" class="reply-item">
+											<image :src="reply.cover" class="reply-avatar" mode="aspectFill"></image>
+											<view class="reply-content-wrap">
+												<view class="reply-header">
+													<text class="reply-nickname">{{ reply.nickname }}</text>
+													<text class="reply-time">{{ formatTime(reply.time) }}</text>
+												</view>
+												<view class="reply-content">
+													<text v-for="user in reply.mentionUsers" :key="user.username"
+														class="mention-user">
+														@{{ user.nickname }}
+													</text>
+													<text>{{ reply.content }}</text>
+												</view>
+												<view class="reply-actions">
+													<text class="reply-action" @click="likeComment(reply)">
+														{{ reply.isLiked ? '❤️' : '🤍' }} {{ reply.likes }}
+													</text>
+													<text class="reply-action" @click="replyComment(reply)">
+														回复
+													</text>
+													<text v-if="reply.username === userInfo.username" class="reply-action delete-action" @click="deleteComment(reply)">
+														删除
+													</text>
+												</view>
+											</view>
+										</view>
+
+										<text v-if="comment.soncount > comment.replies.length" class="load-more-replies"
+											@click="loadMoreReplies(comment)">
+											加载更多回复...
+										</text>
+									</view>
+								</view>
+							</view>
+
+							<text v-if="hasMoreComments" class="load-more-comments" @click="loadMoreComments">
+								加载更多评论...
+							</text>
+						</view>
+					</scroll-view>
+				</view>
+
+				<!-- 消息页面 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'messages' && !showNotifyDetail" class="messages-page">
+					<view class="message-tabs">
+						<view class="message-tab" :class="{ active: messageTab === 'official' }"
+							@click="messageTab = 'official'; loadNotifications()">
+							<text>官方消息</text>
+							<view v-if="unreadOfficialCount > 0" class="tab-badge">{{ unreadOfficialCount }}</view>
+						</view>
+						<view class="message-tab" :class="{ active: messageTab === 'personal' }"
+							@click="messageTab = 'personal'; loadChatRecords()">
+							<text>个人消息</text>
+							<view v-if="unreadPersonalCount > 0" class="tab-badge">{{ unreadPersonalCount }}</view>
+						</view>
+					</view>
+
+					<scroll-view scroll-y class="message-list">
+						<!-- 官方消息 -->
+						<view v-for="msg in currentMessages" :key="msg.id" class="message-item"
+							:class="{ unread: msg.isread === 0 }" @click="readOfficialMessage(msg)"
+							v-if="messageTab === 'official'">
+							<image src="/static/official-avatar.png" class="message-avatar" mode="aspectFill"></image>
+							<view class="message-content-wrap">
+								<view class="message-header">
+									<text class="message-sender">官方通知</text>
+									<text class="message-time">{{ formatTime(msg.time) }}</text>
+								</view>
+								<text class="message-content message-content-ellipsis">{{ msg.content }}</text>
+							</view>
+							<view v-if="msg.isread === 0" class="unread-dot"></view>
+						</view>
+						<!-- 个人消息（聊天记录） -->
+						<view v-for="rec in currentMessages" :key="rec.id" class="message-item"
+							:class="{ unread: rec.unread > 0 }" @click="openChatByRecord(rec)"
+							v-if="messageTab === 'personal'">
+							<image :src="rec.sendcover" class="message-avatar" mode="aspectFill"></image>
+							<view class="message-content-wrap">
+								<view class="message-header">
+									<text class="message-sender">{{ rec.sendnickname }}</text>
+									<text class="message-time">{{ formatTime(rec.time) }}</text>
+								</view>
+								<text class="message-content message-content-ellipsis">{{ rec.lastcontent }}</text>
+							</view>
+							<view v-if="rec.unread > 0" class="unread-badge">{{ rec.unread }}</view>
+						</view>
+					</scroll-view>
+				</view>
+
+				<!-- 通知详情页 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'messages' && showNotifyDetail && currentNotifyDetail" class="notify-detail-page">
+					<view class="notify-detail-header">
+						<text class="notify-detail-back" @click="closeNotifyDetail">← 返回</text>
+						<text class="notify-detail-title">官方通知</text>
+						<view style="width:50px"></view>
+					</view>
+					<scroll-view scroll-y class="notify-detail-scroll">
+						<view class="notify-detail-time">{{ formatTime(currentNotifyDetail.time) }}</view>
+						<view class="notify-detail-body">
+							<rich-text :nodes="renderMarkdown(currentNotifyDetail.content)" class="notify-md-content"></rich-text>
+						</view>
+					</scroll-view>
+				</view>
+
+				<!-- 聊天页面 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'chat' && chatUser" class="chat-page">
+					<view class="chat-page-header">
+						<text class="chat-page-back" @click="closeChatPage">← 返回</text>
+						<text class="chat-page-title">{{ chatUser.nickname }}</text>
+						<view style="width:50px"></view>
+					</view>
+					<scroll-view scroll-y class="chat-page-messages" ref="chatList">
+						<view v-for="msg in chatMessages" :key="msg.id" class="chat-msg"
+							:class="{ 'chat-msg-self': msg.sendusername === userInfo.username }">
+							<image :src="msg.sendusername === userInfo.username ? userInfo.head : (chatUser && chatUser.cover || '')"
+								class="chat-avatar" mode="aspectFill"></image>
+							<view class="chat-bubble">
+								<text class="chat-msg-text">{{ msg.content }}</text>
+								<text class="chat-msg-time">{{ formatTime(msg.time) }}</text>
+							</view>
+						</view>
+					</scroll-view>
+					<view class="chat-page-input-bar">
+						<input type="text" v-model="chatInput" placeholder="输入消息..." @confirm="sendChatMessage"
+							class="chat-page-input" />
+						<button class="chat-page-send" @click="sendChatMessage">发送</button>
+					</view>
+				</view>
+
+				<!-- 作者页面 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'author' && currentAuthor.username" class="author-page">
+					<view class="author-page-header">
+						<text class="author-page-back" @click="closeAuthorPage">← 返回</text>
+						<text class="author-page-title">{{ currentAuthor.nickname }}</text>
+						<view style="width:50px"></view>
+					</view>
+					<view class="author-page-profile">
+						<image :src="currentAuthor.cover" class="author-page-avatar" mode="aspectFill"></image>
+						<text class="author-page-name">{{ currentAuthor.nickname }}</text>
+						<text class="author-page-username">@{{ currentAuthor.username }}</text>
+						<button class="author-page-mention" @click="mentionAuthorFromPage">@ TA</button>
+					</view>
+					<scroll-view scroll-y class="author-page-works" @scrolltolower="loadMoreAuthorWorks">
+						<view v-for="work in authorWorks" :key="work.id" class="author-work-item"
+							@click="viewTweetDetail(work)">
+							<view class="author-work-left">
+								<image :src="work._mediaItems && work._mediaItems.length > 0 ? work._mediaItems[0].url : work.cover"
+									class="author-work-cover" mode="aspectFill"></image>
+							</view>
+							<view class="author-work-right">
+								<text class="author-work-title">{{ work.title }}</text>
+								<view class="author-work-meta">
+									<text>❤️ {{ work.likes || 0 }}</text>
+									<text>💬 {{ work.commentCount || 0 }}</text>
+									<text>{{ formatTime(work.time) }}</text>
+								</view>
+							</view>
+						</view>
+						<view v-if="authorLoading" class="author-work-loading">加载中...</view>
+						<view v-if="!authorHasMore && authorWorks.length > 0" class="author-work-nomore">没有更多了</view>
+					</scroll-view>
+				</view>
+
+				<!-- 我的页面 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'profile'" class="profile-page">
+					<view class="profile-header">
+						<image :src="editMode && editUserInfo.head ? editUserInfo.head : userInfo.head" class="profile-avatar" mode="aspectFill"></image>
+						<text class="profile-nickname">{{ userInfo.nickname }}</text>
+						<text class="profile-username">@{{ userInfo.username }}</text>
+						<text class="profile-level">等级: Lv.{{ userInfo.grade }}</text>
+					</view>
+
+					<view v-if="editMode" class="profile-head-edit">
+						<text class="info-label">头像URL:</text>
+						<input v-model="editUserInfo.head" class="info-input" type="text" placeholder="输入头像URL..." />
+						<view class="head-edit-actions">
+							<button class="choose-img-btn" @click="$refs.chooseImage.open()">选择图片</button>
+						</view>
+						<text class="edit-warning">注意：修改的头像不针对已有作品生效，作品将维持旧的头像</text>
+					</view>
+
+					<view class="profile-info">
+						<view class="info-item">
+							<text class="info-label">邮箱:</text>
+							<input v-if="editMode" v-model="editUserInfo.email" class="info-input" type="text" />
+							<text v-else class="info-value">{{ userInfo.email }}</text>
+						</view>
+						<view class="info-item">
+							<text class="info-label">昵称:</text>
+							<input v-if="editMode" v-model="editUserInfo.nickname" class="info-input" type="text" />
+							<text v-else class="info-value">{{ userInfo.nickname }}</text>
+							<text v-if="editMode" class="edit-warning">注意：修改的昵称不针对已有作品生效，作品将维持旧的昵称</text>
+						</view>
+						<view class="info-item">
+							<text class="info-label">密码:</text>
+							<input v-if="editMode" v-model="editUserInfo.password" class="info-input" type="text" placeholder="输入新密码" />
+							<text v-else class="info-value">******</text>
+						</view>
+						<view class="info-item">
+							<text class="info-label">余额:</text>
+							<text class="info-value">{{ userInfo.money }} 元</text>
+						</view>
+						<view class="info-item">
+							<text class="info-label">收益:</text>
+							<text class="info-value">{{ userInfo.earnmoney }} 元</text>
+						</view>
+					</view>
+
+					<view class="profile-actions">
+						<button v-if="!editMode" class="edit-btn" @click="enterEditMode">
+							编辑资料
+						</button>
+						<template v-else>
+							<button class="save-btn" @click="saveProfile">保存</button>
+							<button class="cancel-btn" @click="cancelEdit">取消</button>
+						</template>
+					</view>
+					<ChooseImage ref="chooseImage" :count="1" :userinfo="userInfo" :is-dark-mode="isDarkMode" @confirm="handleHeadConfirm" />
+				</view>
+
+				<!-- 设置页面 -->
+				<view v-if="!currentTweetDetail && activeMenu === 'settings'" class="settings-page">
+					<view class="setting-item">
+						<text class="setting-label">夜间模式</text>
+						<switch :checked="isDarkMode" @change="toggleDarkMode" color="#FF6B6B" />
+					</view>
+					<view class="setting-item">
+						<text class="setting-label">消息通知</text>
+						<switch :checked="notificationEnabled" @change="toggleNotification" color="#FF6B6B" />
+					</view>
+					<view class="setting-item">
+						<text class="setting-label">清除缓存</text>
+						<button class="clear-btn" @click="clearCache">清除</button>
+					</view>
+					<button class="logout-btn" @click="logout">退出登录</button>
+				</view>
+			</view>
+
+			<!-- 管理页面 -->
+			<view v-if="!currentTweetDetail && activeMenu === 'admin' && isAdmin" class="admin-page">
+				<view class="admin-tabs">
+					<view class="admin-tab-row">
+						<view class="admin-tab" :class="{ active: adminTab === 'tweet_pending' }"
+							@click="switchAdminTab('tweet_pending')">推文审核</view>
+						<view class="admin-tab" :class="{ active: adminTab === 'tweet_success' }"
+							@click="switchAdminTab('tweet_success')">推文成功</view>
+						<view class="admin-tab" :class="{ active: adminTab === 'tweet_fail' }"
+							@click="switchAdminTab('tweet_fail')">推文失败</view>
+					</view>
+					<view class="admin-tab-row">
+						<view class="admin-tab" :class="{ active: adminTab === 'comment_pending' }"
+							@click="switchAdminTab('comment_pending')">评论审核</view>
+						<view class="admin-tab" :class="{ active: adminTab === 'comment_success' }"
+							@click="switchAdminTab('comment_success')">评论成功</view>
+						<view class="admin-tab" :class="{ active: adminTab === 'comment_fail' }"
+							@click="switchAdminTab('comment_fail')">评论失败</view>
+					</view>
+				</view>
+				<scroll-view scroll-y class="admin-list" @scrolltolower="loadMoreAdmin">
+					<view v-for="item in adminList" :key="item.id" class="admin-card"
+						@click.stop="item.title ? viewTweetDetail(item) : ''">
+						<view class="admin-card-top" @click.stop="">
+							<image :src="item.cover || ''" class="admin-card-avatar" mode="aspectFill"></image>
+							<view class="admin-card-user">
+								<text class="admin-card-nickname">{{ item.nickname || '匿名' }}</text>
+								<text class="admin-card-username">@{{ item.username }}</text>
+							</view>
+							<text class="admin-card-level">等级: {{ item.level || 1 }}</text>
+							<text class="admin-card-status">[{{ item.status === 2 ? '已通过' : item.status === 0 ? '已拒绝' : '待审核' }}]</text>
+						</view>
+						<text class="admin-card-content" @click.stop="">{{ item.title || item.content }}</text>
+						<view class="admin-card-actions" @click.stop="">
+							<button v-if="item.status !== 2" class="admin-btn approve" @click="openReview(item, 'approve')">通过</button>
+							<button v-if="item.status !== 0" class="admin-btn reject" @click="openReview(item, 'reject')">拒绝</button>
+							<button class="admin-btn setlevel" @click="openReview(item, 'setlevel')">调级</button>
+						</view>
+					</view>
+					<view v-if="adminLoading" class="admin-loading">加载中...</view>
+					<view v-if="!adminHasMore && adminList.length > 0" class="admin-loading">没有更多了</view>
+					<view v-if="adminList.length === 0 && !adminLoading" class="admin-loading">暂无数据</view>
+				</scroll-view>
+			</view>
+		</view>  <!-- 结束 right-content -->
+
+		<!-- 审核弹窗 -->
+		<view v-if="reviewDialog" class="modal-overlay" @click.self="reviewDialog = false">
+			<view class="review-modal">
+				<view class="modal-header">
+					<text class="modal-title">
+						{{ reviewAction === 'approve' ? '确认通过' : reviewAction === 'reject' ? '拒绝' : '调整等级' }}
+					</text>
+					<text class="modal-close" @click="reviewDialog = false">×</text>
+				</view>
+				<view class="review-body">
+					<text class="review-info">用户名: {{ reviewTarget && reviewTarget.username || '' }}</text>
+					<text class="review-info">内容: {{ (reviewTarget && (reviewTarget.title || reviewTarget.content) || '').slice(0, 100) }}</text>
+					<text class="review-info">当前等级: {{ reviewTarget && reviewTarget.level || 1 }}</text>
+
+					<view v-if="reviewAction === 'setlevel'" class="review-field">
+						<text class="review-label">新等级 (1-9):</text>
+						<input type="number" v-model.number="reviewLevel" min="1" max="9" class="review-input" />
+					</view>
+
+					<view v-if="reviewAction !== 'approve'" class="review-field">
+						<text class="review-label">原因说明:</text>
+						<input type="text" v-model="reviewReason" placeholder="请输入原因..." class="review-input" />
+					</view>
+
+					<view class="review-field review-notify-row">
+						<view class="review-toggle" @click="reviewNotify = !reviewNotify">
+							<view class="review-toggle-track" :class="{ on: reviewNotify }">
+								<view class="review-toggle-thumb"></view>
+							</view>
+							<text class="review-toggle-label">通知用户</text>
+						</view>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="cancel-btn" @click="reviewDialog = false">取消</button>
+					<button class="submit-btn" @click="submitReview">确认</button>
+				</view>
+			</view>
+		</view>
+
+		<!-- 管理快捷操作弹窗 -->
+		<view v-if="adminStatusLevelDialog" class="modal-overlay" @click.self="adminStatusLevelDialog = false">
+			<view class="review-modal">
+				<view class="modal-header">
+					<text class="modal-title">管理推文</text>
+					<text class="modal-close" @click="adminStatusLevelDialog = false">×</text>
+				</view>
+				<view class="review-body">
+					<text class="review-info">内容: {{ (adminSLTarget && adminSLTarget.title || '').slice(0, 100) }}</text>
+
+					<view class="review-field">
+						<text class="review-label">状态:</text>
+						<view class="admin-sl-status-options">
+							<view class="admin-sl-status-option" :class="{ active: adminSLStatus === 0 }" @click="adminSLStatus = 0">拒绝(0)</view>
+							<view class="admin-sl-status-option" :class="{ active: adminSLStatus === 1 }" @click="adminSLStatus = 1">审核中(1)</view>
+							<view class="admin-sl-status-option" :class="{ active: adminSLStatus === 2 }" @click="adminSLStatus = 2">通过(2)</view>
+							<view class="admin-sl-status-option" :class="{ active: adminSLStatus === 3 }" @click="adminSLStatus = 3">下架(3)</view>
+						</view>
+					</view>
+
+					<view class="review-field">
+						<text class="review-label">等级 (1-9):</text>
+						<input type="number" v-model.number="adminSLLevel" min="1" max="9" class="review-input" />
+					</view>
+
+					<view class="review-field">
+						<text class="review-label">原因说明（通知时使用）:</text>
+						<input type="text" v-model="adminSLReason" placeholder="请输入原因..." class="review-input" />
+					</view>
+
+					<view class="review-field review-notify-row">
+						<view class="review-toggle" @click="adminSLNotify = !adminSLNotify">
+							<view class="review-toggle-track" :class="{ on: adminSLNotify }">
+								<view class="review-toggle-thumb"></view>
+							</view>
+							<text class="review-toggle-label">通知用户</text>
+						</view>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="cancel-btn" @click="adminStatusLevelDialog = false">取消</button>
+					<button class="submit-btn" @click="submitAdminStatusLevel">确认</button>
+				</view>
+			</view>
+		</view>
+
+		<!-- 发布推文弹窗 -->
+		<view v-if="showPublishModal" class="modal-overlay" @click.self="showPublishModal = false">
+			<view class="publish-modal">
+				<view class="modal-header">
+					<text class="modal-title">发布推文</text>
+					<text class="modal-close" @click="showPublishModal = false">×</text>
+				</view>
+				<scroll-view scroll-y class="modal-content">
+					<textarea maxlength="150" v-model="newTweet.title" placeholder="推文标题" class="publish-content" type="text" /></textarea>
+
+					<textarea v-model="newTweet.content" placeholder="详细内容…" class="publish-content"
+						maxlength="5000"></textarea>
+
+					<view class="option-item">
+						<text>标签:</text>
+						<input style="height: 50px !important;"    v-model="tagInput" placeholder="输入标签，回车添加" @confirm="addTag" class="tag-input2" />
+						<view class="tags-display">
+							<view v-for="(tag, index) in newTweet.tags" :key="index" class="tag-chip">
+								<text>#{{ tag }}</text>
+								<text class="tag-remove" @click="removeTag(index)">×</text>
+							</view>
+						</view>
+					</view>
+
+					<!-- 媒体选择区 -->
+					<view class="option-item">
+						<text>媒体:</text>
+						<view class="media-buttons">
+							<text class="parse-btn" @click="openChooseImage">📁 选择已有媒体</text>
+							<text class="parse-btn file-btn" @click="openMediaSelector">➕ 新增媒体</text>
+						</view>
+						<!-- 已选媒体预览 -->
+						<view v-if="selectedMediaList.length > 0" class="mediaurl-preview">
+							<view v-for="(item, idx) in selectedMediaList" :key="idx" class="mediaurl-item">
+								<image v-if="item.Format !== 2" :src="item.url" class="mediaurl-thumb" mode="aspectFill"></image>
+								<video v-else :src="item.url" class="mediaurl-thumb video-thumb" muted></video>
+								<view class="mediaurl-id">ID:{{ item.id || 'new' }}</view>
+								<text class="mediaurl-remove" @click="removeSelectedMedia(idx)">×</text>
+							</view>
+						</view>
+						<text v-else class="media-hint">请选择或新增媒体</text>
+					</view>
+
+					<!-- ChooseImage 和 MediaSelector 组件 -->
+					<ChooseImage ref="chooseImage" :count="6" :userinfo="userInfo" @confirm="handleChooseImageConfirm" />
+					<MediaSelector ref="mediaSelector" :userinfo="userInfo" @confirm="handleMediaSelectorConfirm" />
+
+					<!-- A链接区 -->
+					<view class="option-item">
+						<text>A链接（可选标题，URL必填）:</text>
+						<view class="alist-row">
+							<input style="height: 50px;"  :maxlength="-1"  v-model="alistTitleInput" placeholder="标题（可选）" class="tag-input alist-title-input" />
+							<input style="height: 50px;"  :maxlength="-1"  v-model="alistUrlInput" placeholder="链接URL（必填）" class="tag-input alist-url-input" />
+							<text class="parse-btn" @click="addAlistItem">+ 添加</text>
+						</view>
+						<view v-if="newTweet.alist.length > 0" class="alist-preview">
+							<view v-for="(item, idx) in newTweet.alist" :key="idx" class="alist-preview-item">
+								<text class="alist-preview-idx">{{ idx + 1 }}.</text>
+								<text class="alist-preview-text">{{ item.title || '链接' + (idx + 1) }}</text>
+								<text class="alist-preview-url" @click="openLink(item.url)">{{ item.url }}</text>
+								<text class="mediaurl-remove" @click="removeAlistItem(idx)">×</text>
+							</view>
+						</view>
+					</view>
+				</scroll-view>
+				<view class="modal-footer">
+					<button class="cancel-btn" @click="showPublishModal = false">取消</button>
+					<button class="submit-btn" @click="publishTweet">发布</button>
+				</view>
+			</view>
+		</view>
+
+		<!-- 升级提示弹窗 -->
+		<view v-if="showUpgradeModal" class="modal-overlay" @click.self="showUpgradeModal = false">
+			<view class="upgrade-modal">
+				<view class="modal-header">
+					<text class="modal-title">提升等级</text>
+					<text class="modal-close" @click="showUpgradeModal = false">×</text>
+				</view>
+				<view class="upgrade-content">
+					<text class="upgrade-tip">选择以下任一方式提升等级：</text>
+					<view class="upgrade-option" @click="handleRecharge">
+						<text class="option-icon">💰</text>
+						<view class="option-info">
+							<text class="option-title">充值 10 元</text>
+							<text class="option-desc">立即获得内门资格</text>
+						</view>
+					</view>
+					<view class="upgrade-option">
+						<text class="option-icon">📝</text>
+						<view class="option-info">
+							<text class="option-title">发布 5 条图文</text>
+							<text class="option-desc">需审核通过</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- ImagePreview 图片预览 -->
+		<ImagePreview ref="preview" />
+
+		<!-- 同步进度 -->
+		<ProgressIndicator
+			:visible="progressVisible"
+			:total-count="totalNum"
+			:completed-count="completedNum"
+			:current-item-text="currentText"
+			:is-dark-mode="isDarkMode"
+		/>
+	</view>
+</template>
+
+<script>
+	// 先引入设备ID函数
+	import {
+		getDeviceId
+	} from '@/common/device.js'
+	import ChooseImage from '@/components/chooseimage.vue'
+	import MediaSelector from '@/components/MediaSelector.vue'
+	import ImagePreview from '@/components/ImagePreview.vue'
+	import ProgressIndicator from '@/components/ProgressIndicator.vue'
+	export default {
+		components: { ChooseImage, MediaSelector, ImagePreview, ProgressIndicator },
+		data() {
+			return {
+				// 主题模式
+				isDarkMode: false,
+				query: {},
+				// 用户信息
+				userInfo: {
+					id: 1,
+					username: 'youke',
+					nickname: '游客',
+					email: 'user001@example.com',
+					password: '123456',
+					head: 'https://picsum.photos/100/100?random=1',
+					grade: 0, // 0表示没有内门资格
+					overtime: 0,
+					money: 1000,
+					earnmoney: 500,
+					buy_media: [],
+					buy_zuopin: [],
+					buy_zuopintip: [],
+					buy_picture: [],
+					buy_picturetip: [],
+					buy_tuwen: [],
+					collect_zuopin: [],
+					collect_media: [],
+					collect_picture: [],
+					deviceList: []
+				},
+
+				// 编辑模式
+				editMode: false,
+				editUserInfo: {},
+
+				// 菜单状态
+				activeMenu: 'home',
+				isUpdatingFromUrl: false,
+				currentTweetId: '',
+
+				// 搜索
+				searchKeyword: '',
+				searchtags: [],
+				tagInput: '',
+				showSearchHistory: false,
+				searchHistory: [],
+
+				allpagesize: 10,
+				allpage: 1,
+
+				// 推文列表
+				tweetList: [],
+				ALLtweetList: [],
+				ALLhasMore: true,
+				myTweetList: [],
+				myPage: 1,
+				myHasMore: true,
+				likedTweetList: [],
+				likedPage: 1,
+				likedHasMore: true,
+				likedIds: [],
+				likedCommentIds: [],
+				loading: false,
+
+				// 推文详情
+				currentTweetDetail: null,
+				detailComments: [],
+				newComment: '',
+				replyTo: 0,
+				replyToComment: null,
+				hasMoreComments: true,
+				commentPage: 1,
+
+				// 消息相关
+				messageTab: 'official',
+				notifyList: [],
+				unreadNotifyCount: 0,
+				unreadMessageCount: 0,
+				unreadOfficialCount: 0,
+				unreadPersonalCount: 0,
+
+				// 聊天对话
+				chatUser: null,
+				chatMessages: [],
+				chatInput: '',
+				chatPage: 1,
+				chatHasMore: true,
+
+				// 聊天记录列表（个人消息用）
+				chatRecordsList: [],
+
+				// 通知详情
+				showNotifyDetail: false,
+				currentNotifyDetail: null,
+
+				// 发布推文
+				showPublishModal: false,
+				newTweet: {
+					title: '',
+					content: '',
+					tags: [],
+					mediaId: [],
+					alist: [],
+				},
+				tagInput: '',
+				selectedMediaList: [],
+				selectedNewMedia: [],
+				alistTitleInput: '',
+				alistUrlInput: '',
+				categories: ['常用', '主体', '衣物', '发型', '场景', '姿势', '环境', '光照', '构图', '画质', '氛围', '其他'],
+
+				// 作者详情
+				showAuthorModal: false,
+				currentAuthor: {},
+				authorWorks: [],
+				authorPage: 1,
+				authorHasMore: true,
+				authorLoading: false,
+
+				// 升级提示
+				showUpgradeModal: false,
+
+				// 设置
+				notificationEnabled: true,
+
+				// 管理员
+				adminTab: 'tweet_pending',
+				adminList: [],
+				adminPage: 1,
+				adminHasMore: true,
+				adminLoading: false,
+				reviewDialog: false,
+				reviewTarget: null,
+				reviewType: '',
+				reviewAction: '',
+				reviewReason: '',
+				reviewLevel: 1,
+				reviewNotify: true,
+
+				// 管理快速操作弹窗
+				adminStatusLevelDialog: false,
+				adminSLTarget: null,
+				adminSLStatus: 2,
+				adminSLLevel: 1,
+				adminSLNotify: true,
+				adminSLReason: '',
+
+				// B站播放状态
+				bilibiliActive: {},
+				bilibiliActiveDetail: {},
+
+				// 同步进度
+				progressVisible: false,
+				totalNum: 0,
+				completedNum: 0,
+				currentText: '',
+			};
+		},
+
+		computed: {
+			// 是否为游客
+			isGuestMode() {
+				return this.$storage && this.$storage.getItem('isGuest')
+			},
+
+			// 是否为管理员
+			isAdmin() {
+				return this.userInfo && this.userInfo.username === 'admin'
+			},
+
+			// 当前推文列表
+			currentTweetList() {
+				if (this.activeMenu === 'home') {
+					return this.ALLtweetList;
+				} else if (this.activeMenu === 'myTweets') {
+					return this.myTweetList;
+				} else if (this.activeMenu === 'likes') {
+					return this.likedTweetList;
+				}
+				return [];
+			},
+
+			// 当前列表是否有更多数据
+			currentHasMore() {
+				if (this.activeMenu === 'home') return this.ALLhasMore
+				if (this.activeMenu === 'myTweets') return this.myHasMore
+				if (this.activeMenu === 'likes') return this.likedHasMore
+				return false
+			},
+
+			// 当前消息列表
+			currentMessages() {
+				if (this.messageTab === 'official') {
+					return this.notifyList.filter(msg => msg.type === 0);
+				} else {
+					return this.chatRecordsList;
+				}
+			}
+		},
+
+		async mounted() {
+			// this.$log('mounted')
+			if(this.$storage.getItem('isGuest')){
+				this.userInfo = {
+					username: 'youke',
+					nickname: '游客',
+					email: '',
+					password: '',
+					head: 'https://picsum.photos/100/100?random=0',
+					grade: 1,
+					level: 1,
+					money: 0,
+					earnmoney: 0
+				}
+				this.query = {level:1}
+			}else{
+				const info = await this.$getuserinfobydb()
+				// this.$log(info)
+				if (!info || !info.username) {
+					uni.showToast({ title: '用户信息异常，即将跳转', icon: 'none' })
+					setTimeout(() => {
+						uni.navigateTo({ url: '/pages/index/index2' })
+					}, 1500)
+					return
+				}
+				this.userInfo = info
+				this.query = this.$getQueryByUserGrade(this.userInfo)
+			}
+			await this.initData();
+			this.loadDarkMode();
+
+			// 加载搜索历史
+			this.searchHistory = this.$storage.getItem('searchHistory') || []
+
+			// URL参数同步（在数据加载后执行）
+			// #ifdef H5
+			if (this.$urlHelper) {
+				const params = this.$urlHelper.getCurrentParams()
+				this.syncFromUrlParams(params)
+
+				this._urlUnsubscribe = this.$urlHelper.onParamsChange((newParams) => {
+					if (!this.isUpdatingFromUrl) {
+						this.syncFromUrlParams(newParams)
+					}
+				})
+			}
+			// #endif
+		},
+
+		beforeDestroy() {
+			// #ifdef H5
+			if (this._urlUnsubscribe) {
+				this._urlUnsubscribe()
+			}
+			// #endif
+		},
+
+		methods: {
+			// 初始化数据
+			async initData() {
+				// 从数据库加载已点赞ID
+				this.likedIds = []
+				this.likedCommentIds = []
+				try {
+					const stateResult = await this.$request({
+						action: 'getList',
+						tablename: 'u4_Tweet_state',
+						params: {
+							query: { username: this.userInfo.username, islike: 1 },
+							page: 1,
+							pageSize: 9999,
+							order: 'desc',
+							orderBy: 'id'
+						}
+					})
+					const stateList = this.$parseNestedJson(stateResult) || []
+					this.likedIds = stateList.map(s => s.Tweetid)
+				} catch (e) {
+					console.error('同步点赞数据失败:', e)
+				}
+
+				await this.loadTweets();
+				this.loadNotifications();
+			},
+
+			// 加载夜间模式设置
+			loadDarkMode() {
+				// 读取主题设置
+				this.isDarkMode = this.$storage.getItem('darkMode') || false;
+			},
+
+			// 切换夜间模式
+			toggleDarkMode(e) {
+				this.isDarkMode = e.detail.value;
+				// uni.setStorageSync('darkMode', this.isDarkMode);
+				
+			this.$storage.setItem('darkMode',this.isDarkMode)
+			},
+
+			// ====== 管理员审核 ======
+
+			// adminTab → { tablename, status } 映射
+			adminTabConfig(tab) {
+				const isTweet = tab.startsWith('tweet')
+				const statusMap = { pending: 1, success: 2, fail: 0 }
+				const key = tab.split('_')[1]
+				return {
+					tablename: isTweet ? 'u4_Tweet' : 'u4_commit',
+					status: statusMap[key] || 1
+				}
+			},
+
+			// 切换Tab
+			switchAdminTab(tab) {
+				this.adminTab = tab
+				this.adminList = []
+				this.adminPage = 1
+				this.adminHasMore = true
+				this.loadAdminData()
+				this.updateUrlParams()
+			},
+
+			// 进入管理页
+			switchAdminMenu(menu) {
+				this.activeMenu = menu
+				this.adminTab = 'tweet_pending'
+				this.adminList = []
+				this.adminPage = 1
+				this.adminHasMore = true
+				this.loadAdminData()
+				this.updateUrlParams()
+			},
+
+			async loadAdminData() {
+				const cfg = this.adminTabConfig(this.adminTab)
+				this.adminLoading = true
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: cfg.tablename,
+						params: {
+							query: { status: cfg.status },
+							page: this.adminPage,
+							pageSize: 20,
+							order: 'desc',
+							orderBy: cfg.tablename === 'u4_Tweet' ? 'id' : 'time'
+						}
+					})
+					let list = this.$parseNestedJson(result) || []
+					if (this.adminPage === 1) {
+						this.adminList = list
+					} else {
+						this.adminList = this.adminList.concat(list)
+					}
+					this.adminHasMore = list.length === 20
+					this.adminPage++
+				} catch (e) {
+					console.error('加载管理数据失败:', e)
+				} finally {
+					this.adminLoading = false
+				}
+			},
+
+			loadMoreAdmin() {
+				if (!this.adminHasMore || this.adminLoading) return
+				this.loadAdminData()
+			},
+
+			openReview(item, action) {
+				this.reviewTarget = item
+				this.reviewAction = action
+				this.reviewReason = ''
+				this.reviewLevel = item.level || 1
+				this.reviewNotify = true
+				this.reviewDialog = true
+			},
+
+			async submitReview() {
+				const item = this.reviewTarget
+				const isTweet = this.adminTab.startsWith('tweet')
+				const tablename = isTweet ? 'u4_Tweet' : 'u4_commit'
+				const action = this.reviewAction
+
+				try {
+					if (action === 'approve') {
+						await this.$request({
+							action: 'update',
+							tablename,
+							params: { id: item.id, status: 2 }
+						})
+						item.status = 2
+						if (this.reviewNotify) {
+							this.sendNotify(item, `您的${isTweet ? '推文' : '评论'}已通过审核`, '')
+						}
+					} else if (action === 'reject') {
+						await this.$request({
+							action: 'update',
+							tablename,
+							params: { id: item.id, status: 0 }
+						})
+						item.status = 0
+						if (this.reviewNotify) {
+							this.sendNotify(item, `您的${isTweet ? '推文' : '评论'}审核未通过`,
+								`原因: ${this.reviewReason || '未通过审核'}`)
+						}
+					} else if (action === 'setlevel') {
+						const newLevel = Math.max(1, Math.min(9, this.reviewLevel || 1))
+						await this.$request({
+							action: 'update',
+							tablename,
+							params: { id: item.id, level: newLevel }
+						})
+						item.level = newLevel
+						if (this.reviewNotify) {
+							this.sendNotify(item, `您的${isTweet ? '推文' : '评论'}等级已调整`,
+								`新等级: ${newLevel}。原因: ${this.reviewReason || '管理员调整'}`)
+						}
+					}
+
+					// 如果当前tab不匹配新状态，从列表移除
+					const cfg = this.adminTabConfig(this.adminTab)
+					if (item.status !== cfg.status) {
+						const idx = this.adminList.findIndex(t => t.id === item.id)
+						if (idx !== -1) this.adminList.splice(idx, 1)
+					}
+
+					this.reviewDialog = false
+					this.$youToast.success('操作成功')
+				} catch (e) {
+					this.$log('审核操作失败:', e)
+					this.$youToast.error('操作失败')
+				}
+			},
+
+			// 管理员快速操作（主页列表）
+			openAdminStatusLevel(tweet) {
+				this.adminSLTarget = tweet
+				this.adminSLStatus = tweet.status || 2
+				this.adminSLLevel = tweet.level || 1
+				this.adminSLNotify = true
+				this.adminSLReason = ''
+				this.adminStatusLevelDialog = true
+			},
+
+			async submitAdminStatusLevel() {
+				const tweet = this.adminSLTarget
+				const newStatus = this.adminSLStatus
+				const newLevel = Math.max(1, Math.min(9, this.adminSLLevel || 1))
+
+				try {
+					await this.$request({
+						action: 'update',
+						tablename: 'u4_Tweet',
+						params: { id: tweet.id, status: newStatus, level: newLevel }
+					})
+					tweet.status = newStatus
+					tweet.level = newLevel
+
+					if (this.adminSLNotify) {
+						this.sendNotify(tweet,
+							`您的推文状态已更新`,
+							`状态: ${['已拒绝','审核中','已通过','已下架'][newStatus] || newStatus}\n等级: ${newLevel}\n原因: ${this.adminSLReason || '管理员操作'}`)
+					}
+
+					this.adminStatusLevelDialog = false
+					this.$youToast.success('操作成功')
+				} catch (e) {
+					this.$log('管理操作失败:', e)
+					this.$youToast.error('操作失败')
+				}
+			},
+
+			// 作者上下架
+			async toggleShelf(tweet) {
+				const newStatus = tweet.status === 2 ? 3 : 2
+				try {
+					await this.$request({
+						action: 'update',
+						tablename: 'u4_Tweet',
+						params: { id: tweet.id, status: newStatus }
+					})
+					tweet.status = newStatus
+					this.$youToast.success(newStatus === 2 ? '已上架' : '已下架')
+				} catch (e) {
+					this.$log('操作失败:', e)
+					this.$youToast.error('操作失败')
+				}
+			},
+
+			// 作者删除推文
+			async deleteTweet(tweet) {
+				try {
+					await this.$request({
+						action: 'delete',
+						tablename: 'u4_Tweet',
+						params: { id: tweet.id }
+					})
+					// 从所有列表中移除
+					const removeFrom = (list) => {
+						const idx = list.findIndex(t => t.id === tweet.id)
+						if (idx !== -1) list.splice(idx, 1)
+					}
+					removeFrom(this.ALLtweetList)
+					removeFrom(this.myTweetList)
+					removeFrom(this.likedTweetList)
+					this.$youToast.success('已删除')
+				} catch (e) {
+					this.$log('删除失败:', e)
+					this.$youToast.error('删除失败')
+				}
+			},
+
+			// 发送审核通知
+			async sendNotify(item, title, detail) {
+				try {
+					await this.$request({
+						action: 'add',
+						tablename: 'u4_notify',
+						params: {
+							content: `${title}\n${detail}`,
+							receivedusername: item.username,
+							receivednickname: item.nickname || '',
+							receivedcover: item.cover || '',
+							isread: 0,
+							type: 0,
+							sendusername: 'admin',
+							sendnickname: '管理员',
+							sendcover: '',
+							parent: 0,
+							status: 2,
+							time: Date.now()
+						}
+					})
+				} catch (e) {
+					console.error('发送通知失败:', e)
+				}
+			},
+
+			// 构建查询：合并等级权限 + status=2过滤（管理员除外）
+			buildQuery(baseQuery = {}, includeStatusTwo = true) {
+				const q = { ...baseQuery }
+				// 合并等级权限
+				if (this.query && Object.keys(this.query).length > 0) {
+					Object.assign(q, this.query)
+				}
+				// 非管理员只看status=2
+				if (includeStatusTwo && !this.isAdmin) {
+					q.status = 2
+				}
+				return q
+			},
+
+			// 加载推文（HOME页）
+			async loadTweets() {
+				await this.ALLgenerateMockTweets()
+				this.allpage++
+			},
+
+			async ALLgenerateMockTweets() {
+				// 动态构建 query 对象
+				let query = {};
+
+				// 只有 searchKeyword 非空时才添加 title 条件
+				if (this.searchKeyword && this.searchKeyword.trim() !== '') {
+					query.title = {
+						$like: this.searchKeyword
+					};
+				}
+
+				// 只有 searchtags 非空数组时才添加 tags 条件
+				if (this.searchtags && this.searchtags.length > 0) {
+					query.tags = {
+						$in: this.searchtags
+					};
+				}
+
+				// 合并等级权限 + status过滤
+				query = this.buildQuery(query)
+// this.$log(query)
+				try {
+					const result = this.$parseNestedJson(await this.$request({
+						action: 'getList',
+						tablename: 'u4_Tweet',
+						params: {
+							query: query,
+							page: this.allpage,
+							pageSize: this.allpagesize,
+							 order: 'desc',
+							 orderBy: 'id',
+						},
+
+					}));
+
+					console.log('获取推文列表成功:', result);
+
+					// 为每条推文加载媒体数据
+					for (const tweet of result) {
+						tweet._mediaItems = []
+						if (tweet.mediald && tweet.mediald.length > 0) {
+							let ids = tweet.mediald
+							if (typeof ids === 'string') {
+								try { ids = JSON.parse(ids) } catch (e) { ids = [] }
+							}
+							if (Array.isArray(ids) && ids.length > 0) {
+								const mediaResult = await this.$getmediabyid(ids)
+								const items = Array.isArray(mediaResult) ? mediaResult : [mediaResult]
+								this.$set(tweet, '_mediaItems', items)
+							}
+						}
+						// 解析 tags
+						if (tweet.tags && typeof tweet.tags === 'string') {
+							try { tweet.tags = JSON.parse(tweet.tags) } catch (e) { tweet.tags = [] }
+						}
+						// 解析 alist
+						if (tweet.alist && typeof tweet.alist === 'string') {
+							try { tweet.alist = JSON.parse(tweet.alist) } catch (e) { tweet.alist = [] }
+						}
+						// DB字段映射
+						tweet.commentCount = tweet.comments || 0
+						tweet.likes = tweet.likes || 0
+						// 从本地存储读取点赞状态
+						tweet.isLiked = this.likedIds.includes(tweet.id)
+					}
+
+					this.ALLtweetList = this.ALLtweetList.concat(result);
+					this.ALLhasMore = result.length == this.allpagesize;
+					// this.tweetList = result; // 赋值到页面状态
+
+				} catch (error) {
+					console.error('获取推文列表失败:', error.message);
+					uni.showToast({
+						title: '加载列表失败',
+						icon: 'none',
+						duration: 2000
+					});
+				}
+			},
+
+			// 生成模拟推文数据
+			generateMockTweets(count) {
+				// this.$log('generateMockTweets')
+				const tweets = [];
+				for (let i = 0; i < count; i++) {
+					const id = this.tweetList.length + i + 1;
+					const hasImages = Math.random() > 0.3;
+					const hasVideo = Math.random() > 0.8;
+					const imageCount = hasImages ? Math.floor(Math.random() * 6) + 1 : 0;
+
+					tweets.push({
+						id: id,
+						title: `推文标题 ${id} - 可爱的小正太`,
+						username: `user${Math.floor(Math.random() * 100)}`,
+						nickname: `用户${id}`,
+						cover: `https://picsum.photos/100/100?random=${id}`,
+						likes: Math.floor(Math.random() * 1000),
+						category: this.categories[Math.floor(Math.random() * this.categories.length)],
+						content: `# 推文${id}详细内容\n\n这是一篇关于小正太的详细介绍...\n\n## 特点\n- 可爱\n- 活泼\n- 阳光\n\n![图片](https://picsum.photos/800/600?random=${id})`,
+						description: `这是推文${id}的简介，包含一些有趣的内容...`,
+						imageurls: hasImages ? Array.from({
+								length: imageCount
+							}, (_, idx) =>
+							`https://picsum.photos/800/600?random=${id}_${idx}`
+						) : [],
+						videourl: hasVideo ? `https://www.w3school.com.cn/example/html5/mov_bbb.mp4` : '',
+						status: 2,
+						level: Math.floor(Math.random() * 9) + 1,
+						pay: 0,
+						tags: ['正太', '可爱', '阳光'],
+						seriesId: 0,
+						roleID: [],
+						time: Date.now() - Math.random() * 86400000 * 30,
+						isLiked: false,
+						commentCount: Math.floor(Math.random() * 50)
+					});
+				}
+				return tweets;
+			},
+
+			// 加载更多
+			loadMore() {
+				if (this.loading) return
+				// 游客只加载第一页
+				if (this.isGuestMode) return
+
+				if (this.activeMenu === 'home') {
+					if (!this.ALLhasMore) return
+					this.loading = true
+					this.loadTweets().finally(() => { this.loading = false })
+					return
+				}
+
+				if (this.activeMenu === 'myTweets') {
+					if (!this.myHasMore) return
+					this.loading = true
+					this.loadMyTweets().finally(() => { this.loading = false })
+					return
+				}
+
+				if (this.activeMenu === 'likes') {
+					if (!this.likedHasMore) return
+					this.loading = true
+					this.loadLikedTweets().finally(() => { this.loading = false })
+					return
+				}
+
+				if (this.activeMenu === 'author') {
+					if (!this.authorHasMore || this.authorLoading) return
+					this.authorLoading = true
+					this.loadAuthorWorks(this.currentAuthor.username).finally(() => { this.authorLoading = false })
+					return
+				}
+			},
+
+			// ====== 路径与界面双向绑定 ======
+
+			// 界面 → URL
+			updateUrlParams() {
+				if (!this.$urlHelper) return
+				this.isUpdatingFromUrl = true
+
+				const params = { page: this.activeMenu }
+				if (this.currentTweetDetail || this.currentTweetId) {
+					params.tweetid = this.currentTweetId || this.currentTweetDetail.id
+				} else {
+					params.tweetid = null
+				}
+				if (this.activeMenu === 'chat' && this.chatUser) {
+					params.chatuser = this.chatUser.username
+					params.chatnick = this.chatUser.nickname
+					params.chatcover = this.chatUser.cover
+				} else {
+					params.chatuser = null
+					params.chatnick = null
+					params.chatcover = null
+				}
+				if (this.activeMenu === 'author' && this.currentAuthor.username) {
+					params.authoruser = this.currentAuthor.username
+					params.authornick = this.currentAuthor.nickname
+					params.authorcover = this.currentAuthor.cover
+				} else {
+					params.authoruser = null
+					params.authornick = null
+					params.authorcover = null
+				}
+				if (this.activeMenu === 'admin') {
+					params.admintab = this.adminTab
+				} else {
+					params.admintab = null
+				}
+
+				this.$urlHelper.addParams(params)
+
+				setTimeout(() => {
+					this.isUpdatingFromUrl = false
+				}, 100)
+			},
+
+			// URL → 界面
+			syncFromUrlParams(params) {
+				if (!params || !params.page) return
+				if (!this.$urlHelper) return
+				this.isUpdatingFromUrl = true
+				this.currentTweetDetail = null
+
+				this.activeMenu = params.page
+
+				if (params.page === 'home') {
+					if (this.ALLtweetList.length === 0) {
+						this.ALLtweetList = []
+						this.allpage = 1
+						this.ALLhasMore = true
+						this.loadTweets()
+					}
+				} else if (params.page === 'myTweets') {
+					this.myTweetList = []
+					this.myPage = 1
+					this.myHasMore = true
+					this.loadMyTweets()
+				} else if (params.page === 'likes') {
+					this.likedTweetList = []
+					this.likedPage = 1
+					this.likedHasMore = true
+					this.loadLikedTweets()
+				} else if (params.page === 'messages') {
+					this.loadNotifications()
+					this.loadChatRecords()
+				} else if (params.page === 'chat' && params.chatuser) {
+					// 从URL恢复聊天
+					this.chatUser = {
+						username: params.chatuser,
+						nickname: params.chatnick || '',
+						cover: params.chatcover || ''
+					}
+					this.chatMessages = []
+					this.chatPage = 1
+					this.chatHasMore = true
+					this.chatInput = ''
+					this.loadChatMessages()
+				} else if (params.page === 'author' && params.authoruser) {
+					this.currentAuthor = {
+						username: params.authoruser,
+						nickname: params.authornick || '',
+						cover: params.authorcover || ''
+					}
+					this.authorWorks = []
+					this.authorPage = 1
+					this.authorHasMore = true
+					this.loadAuthorWorks(params.authoruser)
+				} else if (params.page === 'admin' && this.isAdmin) {
+					this.activeMenu = 'admin'
+					this.adminTab = params.admintab || 'tweet_pending'
+					this.adminList = []
+					this.adminPage = 1
+					this.adminHasMore = true
+					this.loadAdminData()
+				}
+
+				if (params.tweetid) {
+					this.currentTweetId = parseInt(params.tweetid) || params.tweetid
+					// 从数据中找推文详情
+					const allData = [...this.ALLtweetList, ...this.myTweetList, ...this.likedTweetList]
+					const found = allData.find(t => t.id == this.currentTweetId)
+					if (found) {
+						this.viewTweetDetail(found)
+					}
+				}
+
+				setTimeout(() => {
+					this.isUpdatingFromUrl = false
+				}, 100)
+			},
+
+			// 加载我的推文
+			async loadMyTweets() {
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_Tweet',
+						params: {
+							query: { username: this.userInfo.username },
+							page: this.myPage,
+							pageSize: 10,
+							order: 'desc',
+							orderBy: 'id'
+						}
+					})
+
+					let list = this.$parseNestedJson(result) || []
+					for (const tweet of list) {
+						tweet._mediaItems = []
+						if (tweet.mediald && tweet.mediald.length > 0) {
+							let ids = tweet.mediald
+							if (typeof ids === 'string') {
+								try { ids = JSON.parse(ids) } catch (e) { ids = [] }
+							}
+							if (Array.isArray(ids) && ids.length > 0) {
+								const mediaResult = await this.$getmediabyid(ids)
+								const items = Array.isArray(mediaResult) ? mediaResult : [mediaResult]
+								this.$set(tweet, '_mediaItems', items)
+							}
+						}
+						if (tweet.tags && typeof tweet.tags === 'string') {
+							try { tweet.tags = JSON.parse(tweet.tags) } catch (e) { tweet.tags = [] }
+						}
+						if (tweet.alist && typeof tweet.alist === 'string') {
+							try { tweet.alist = JSON.parse(tweet.alist) } catch (e) { tweet.alist = [] }
+						}
+						tweet.commentCount = tweet.comments || 0
+						tweet.likes = tweet.likes || 0
+						tweet.isLiked = this.likedIds.includes(tweet.id)
+					}
+
+					if (this.myPage === 1) {
+						this.myTweetList = list
+					} else {
+						this.myTweetList = this.myTweetList.concat(list)
+					}
+					this.myHasMore = list.length === 10
+					this.myPage++
+				} catch (e) {
+					console.error('加载我的推文失败:', e)
+				}
+			},
+
+			// 加载喜欢的推文（从本地存储读取）
+			async loadLikedTweets() {
+				try {
+					const ids = [...this.likedIds]
+					if (ids.length === 0) {
+						this.likedHasMore = false
+						this.likedTweetList = []
+						return
+					}
+
+					// 分页取
+					const pageSize = 10
+					const start = (this.likedPage - 1) * pageSize
+					const pageIds = ids.slice(start, start + pageSize)
+
+					if (pageIds.length === 0) {
+						this.likedHasMore = false
+						return
+					}
+
+					if (pageIds.length < pageSize) {
+						this.likedHasMore = false
+					}
+
+					const tweetResult = await this.$request({
+						action: 'getDetail',
+						tablename: 'u4_Tweet',
+						params: {
+							id: pageIds
+						}
+					})
+
+					let tweetList = Array.isArray(tweetResult) ? tweetResult : (tweetResult ? [tweetResult] : [])
+					tweetList = this.$parseNestedJson(tweetList) || []
+
+					for (const tweet of tweetList) {
+						tweet.isLiked = true
+						tweet._mediaItems = []
+						if (tweet.mediald && tweet.mediald.length > 0) {
+							let mIds = tweet.mediald
+							if (typeof mIds === 'string') {
+								try { mIds = JSON.parse(mIds) } catch (e) { mIds = [] }
+							}
+							if (Array.isArray(mIds) && mIds.length > 0) {
+								const mediaResult = await this.$getmediabyid(mIds)
+								const items = Array.isArray(mediaResult) ? mediaResult : [mediaResult]
+								this.$set(tweet, '_mediaItems', items)
+							}
+						}
+						if (tweet.tags && typeof tweet.tags === 'string') {
+							try { tweet.tags = JSON.parse(tweet.tags) } catch (e) { tweet.tags = [] }
+						}
+						if (tweet.alist && typeof tweet.alist === 'string') {
+							try { tweet.alist = JSON.parse(tweet.alist) } catch (e) { tweet.alist = [] }
+						}
+						tweet.commentCount = tweet.comments || 0
+						tweet.likes = tweet.likes || 0
+					}
+
+					if (this.likedPage === 1) {
+						this.likedTweetList = tweetList
+					} else {
+						this.likedTweetList = this.likedTweetList.concat(tweetList)
+					}
+					this.likedPage++
+				} catch (e) {
+					console.error('加载喜欢推文失败:', e)
+				}
+			},
+
+			// 切换菜单
+			switchMenu(menu) {
+				this.activeMenu = menu;
+				this.currentTweetDetail = null;
+				this.bilibiliActive = {};
+				this.bilibiliActiveDetail = {};
+
+				if (menu === 'home') {
+					this.ALLtweetList = [];
+					this.allpage = 1;
+					this.ALLhasMore = true;
+					this.loadTweets();
+				} else if (menu === 'myTweets') {
+					this.myTweetList = [];
+					this.myPage = 1;
+					this.myHasMore = true;
+					this.loadMyTweets();
+				} else if (menu === 'likes') {
+					this.likedTweetList = [];
+					this.likedPage = 1;
+					this.likedHasMore = true;
+					this.loadLikedTweets();
+				} else if (menu === 'messages') {
+					this.loadNotifications();
+					this.loadChatRecords();
+				} else if (menu === 'chat' && this.chatUser) {
+					this.loadChatMessages();
+				} else if (menu === 'admin' && this.isAdmin) {
+					this.switchAdminMenu(menu)
+				}
+				this.updateUrlParams()
+			},
+
+			// 查看推文详情
+			viewTweetDetail(tweet) {
+				if (this.guestGuard()) return
+				this.currentTweetDetail = tweet;
+				this.currentTweetDetail.isLiked = this.likedIds.includes(tweet.id);
+				this.detailComments = [];
+				this.commentPage = 1;
+				this.hasMoreComments = true;
+				this.replyTo = 0;
+				this.replyToComment = null;
+				this.loadComments();
+				this.currentTweetId = tweet.id
+				this.updateUrlParams()
+			},
+
+			// 关闭推文详情
+			closeTweetDetail() {
+				this.currentTweetDetail = null;
+				this.currentTweetId = '';
+				this.bilibiliActiveDetail = {};
+				this.detailComments = [];
+				this.newComment = '';
+				this.updateUrlParams()
+			},
+
+			// 加载评论
+			async loadComments() {
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_commit',
+						params: {
+							query: this.buildQuery({
+								type: 'Tweet',
+								targetid: this.currentTweetDetail.id,
+								parentid: 0
+							}),
+							page: this.commentPage,
+							pageSize: 30,
+							order: 'desc',
+							orderBy: 'time'
+						}
+					})
+
+					let list = this.$parseNestedJson(result) || []
+					// 处理评论数据
+					for (const comment of list) {
+						// 解析 images (JSON ID数组)
+						let imgIds = []
+						if (comment.images) {
+							if (typeof comment.images === 'string') {
+								try { imgIds = JSON.parse(comment.images) } catch (e) { imgIds = [] }
+							} else if (Array.isArray(comment.images)) {
+								imgIds = comment.images
+							}
+						}
+						comment.imageUrls = []
+						if (imgIds.length > 0) {
+							try {
+								const mediaList = await this.$getmediabyid(imgIds)
+								comment.imageUrls = mediaList.filter(m => m.Format !== 2).map(m => m.url)
+							} catch (e) {
+								console.error('加载评论图片失败:', e)
+							}
+						}
+						// 解析 mention
+						if (comment.mention && typeof comment.mention === 'string') {
+							try { comment.mention = JSON.parse(comment.mention) } catch (e) { comment.mention = [] }
+						}
+						if (!Array.isArray(comment.mention)) comment.mention = []
+						comment.mentionUsers = []
+						// 修正字段映射 DB -> 前端
+						comment.likes = comment.like || 0
+						comment.soncount = comment.soncount || 0
+						comment.showReplies = false
+						comment.replies = []
+						comment.isLiked = this.likedCommentIds.includes(comment.id)
+						comment.replyPage = 1
+					}
+
+					if (this.commentPage === 1) {
+						this.detailComments = list
+					} else {
+						this.detailComments = this.detailComments.concat(list)
+					}
+					this.hasMoreComments = list.length === 30
+				} catch (error) {
+					console.error('加载评论失败:', error)
+				}
+			},
+
+			// 加载更多评论
+			loadMoreComments() {
+				this.commentPage++;
+				this.loadComments();
+			},
+
+			// 提交评论
+			async submitComment() {
+				if (this.guestGuard()) return
+				if (!this.newComment.trim()) {
+					uni.showToast({
+						title: '请输入评论内容',
+						icon: 'none'
+					});
+					return;
+				}
+
+				const isReply = this.replyTo > 0
+				const parentid = isReply ? this.replyTo : 0
+				const content = this.newComment.trim()
+
+				try {
+					const result = await this.$request({
+						action: 'add',
+						tablename: 'u4_commit',
+						params: {
+							type: 'Tweet',
+							targetid: this.currentTweetDetail.id,
+							username: this.userInfo.username,
+							nickname: this.userInfo.nickname,
+							cover: this.userInfo.head || '',
+							content: content,
+							images: JSON.stringify([]),
+							Emoji: 0,
+							mention: JSON.stringify([]),
+							parentid: parentid,
+							soncount: 0,
+							status: 1,
+							level: this.userInfo.grade || 0,
+							like: 0,
+							time: Date.now()
+						}
+					})
+
+					const insertId = result && (result.insertId || (result.data && result.data.insertId))
+						? (result.insertId || result.data.insertId)
+						: Date.now()
+
+					// 如果是回复，增加父评论的soncount
+					if (isReply) {
+						// 更新父评论的soncount
+						await this.$request({
+							action: 'update',
+							tablename: 'u4_commit',
+							params: {
+								id: parentid,
+								soncount: (this.replyToComment && this.replyToComment.soncount || 0) + 1
+							}
+						})
+
+						// 给被回复者发送通知
+						if (this.replyToComment && this.replyToComment.username !== this.userInfo.username) {
+							try {
+								await this.$request({
+									action: 'add',
+									tablename: 'u4_notify',
+									params: {
+										content: `${this.userInfo.nickname} 回复了你: ${content.slice(0, 50)}`,
+										receivedusername: this.replyToComment.username,
+										receivednickname: this.replyToComment.nickname,
+										receivedcover: this.replyToComment.cover || '',
+										isread: 0,
+										type: 1,
+										sendusername: this.userInfo.username,
+										sendnickname: this.userInfo.nickname,
+										sendcover: this.userInfo.head || '',
+										parent: 0,
+										status: 2,
+										time: Date.now()
+									}
+								})
+							} catch (e) {
+								console.error('发送回复通知失败:', e)
+							}
+						}
+
+						// 在父评论的replies数组中追加
+						const parentComment = this.detailComments.find(c => c.id === parentid)
+						if (parentComment) {
+							parentComment.soncount = (parentComment.soncount || 0) + 1
+							if (parentComment.showReplies && parentComment.replies) {
+								parentComment.replies.push({
+									id: insertId,
+									_uk: 'r_' + insertId + '_' + Date.now(),
+									type: 'Tweet',
+									targetid: this.currentTweetDetail.id,
+									username: this.userInfo.username,
+									nickname: this.userInfo.nickname,
+									cover: this.userInfo.head,
+									content: content,
+									images: [],
+									imageUrls: [],
+									Emoji: 0,
+									mention: [],
+									mentionUsers: [],
+									parentid: parentid,
+									soncount: 0,
+									status: 2,
+									level: this.userInfo.grade,
+									likes: 0,
+									like: 0,
+									time: Date.now(),
+									isLiked: false
+								})
+							}
+						}
+					} else {
+						// 顶级评论，增加到列表
+						this.detailComments.unshift({
+							id: insertId,
+							_uk: 'c_' + insertId + '_' + Date.now(),
+							type: 'Tweet',
+							targetid: this.currentTweetDetail.id,
+							username: this.userInfo.username,
+							nickname: this.userInfo.nickname,
+							cover: this.userInfo.head,
+							content: content,
+							images: [],
+							imageUrls: [],
+							Emoji: 0,
+							mention: [],
+							mentionUsers: [],
+							parentid: 0,
+							soncount: 0,
+							status: 2,
+							level: this.userInfo.grade,
+							likes: 0,
+							time: Date.now(),
+							isLiked: false,
+							showReplies: false,
+							replies: [],
+							replyPage: 1
+						})
+						// 更新推文表评论数
+						try {
+							const sql = 'UPDATE u4_Tweet SET comments = comments + 1 WHERE id = ?'
+							await this.$request({
+								action: 'executeSql',
+								tablename: 'u4_Tweet',
+								params: { sql, values: [this.currentTweetDetail.id] }
+							})
+						} catch (e) {
+							console.error('更新推文评论数失败:', e)
+						}
+						this.currentTweetDetail.comments = (this.currentTweetDetail.comments || 0) + 1
+					}
+
+					// 重置回复状态
+					this.replyTo = 0
+					this.replyToComment = null
+					this.newComment = ''
+
+					uni.showToast({
+						title: isReply ? '回复成功' : '评论成功',
+						icon: 'success'
+					})
+				} catch (error) {
+					console.error('评论失败:', error)
+					uni.showToast({
+						title: '评论失败',
+						icon: 'none'
+					})
+				}
+			},
+
+			// 点赞评论（本地存储）
+			likeComment(comment) {
+				const newLiked = !comment.isLiked
+				const id = comment.id
+
+				if (newLiked) {
+					if (!this.likedCommentIds.includes(id)) {
+						this.likedCommentIds.push(id)
+					}
+				} else {
+					const idx = this.likedCommentIds.indexOf(id)
+					if (idx !== -1) {
+						this.likedCommentIds.splice(idx, 1)
+					}
+				}
+
+				this.$storage.setItem('likedCommentIds', this.likedCommentIds)
+				comment.isLiked = newLiked
+				comment.likes = (comment.likes || 0) + (newLiked ? 1 : -1)
+			},
+
+			// 展开/收起回复
+			toggleReplies(comment) {
+				comment.showReplies = !comment.showReplies
+
+				if (comment.showReplies && comment.replies.length === 0) {
+					this.loadReplies(comment)
+				}
+			},
+
+			// 加载回复
+			async loadReplies(comment) {
+				if (!comment.replyPage) comment.replyPage = 1
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_commit',
+						params: {
+							query: {
+								type: 'Tweet',
+								targetid: this.currentTweetDetail.id,
+								parentid: comment.id
+							},
+							page: comment.replyPage,
+							pageSize: 10,
+							order: 'asc',
+							orderBy: 'time'
+						}
+					})
+
+					let list = this.$parseNestedJson(result) || []
+					for (const reply of list) {
+						let imgIds = []
+						if (reply.images) {
+							if (typeof reply.images === 'string') {
+								try { imgIds = JSON.parse(reply.images) } catch (e) { imgIds = [] }
+							} else if (Array.isArray(reply.images)) {
+								imgIds = reply.images
+							}
+						}
+						reply.imageUrls = []
+						if (imgIds.length > 0) {
+							try {
+								const mediaList = await this.$getmediabyid(imgIds)
+								reply.imageUrls = mediaList.filter(m => m.Format !== 2).map(m => m.url)
+							} catch (e) {}
+						}
+						if (reply.mention && typeof reply.mention === 'string') {
+							try { reply.mention = JSON.parse(reply.mention) } catch (e) { reply.mention = [] }
+						}
+						if (!Array.isArray(reply.mention)) reply.mention = []
+						reply.mentionUsers = []
+						reply.likes = reply.like || 0
+						reply.isLiked = this.likedCommentIds.includes(reply.id)
+					}
+
+					if (comment.replyPage === 1) {
+						comment.replies = list
+					} else {
+						comment.replies = comment.replies.concat(list)
+					}
+					comment.replyPage++
+				} catch (e) {
+					console.error('加载回复失败:', e)
+				}
+			},
+
+			// 加载更多回复
+			loadMoreReplies(comment) {
+				this.loadReplies(comment)
+			},
+
+			// 回复评论
+			replyComment(comment) {
+				this.replyTo = comment.parentid === 0 ? comment.id : comment.parentid
+				this.replyToComment = comment
+				this.newComment = `@${comment.nickname} `
+				// 聚焦输入框
+				this.$nextTick(() => {
+					const input = document.querySelector('.comment-input')
+					if (input) input.focus()
+				})
+			},
+
+			// 取消回复
+			cancelReply() {
+				this.replyTo = 0
+				this.replyToComment = null
+				this.newComment = ''
+			},
+
+			// ====== 标签搜索相关 ======
+
+			// 点击列表标签添加到搜索
+			clickTag(tag) {
+				if (!this.searchtags.includes(tag)) {
+					this.searchtags.push(tag)
+				}
+				this.saveSearchHistory(tag)
+				this.refreshData()
+			},
+
+			// 搜索框回车或点击标签搜索
+			addSearchTag() {
+				const val = this.tagInput.trim()
+				if (!val) return
+				if (!this.searchtags.includes(val)) {
+					this.searchtags.push(val)
+				}
+				this.saveSearchHistory(val)
+				this.tagInput = ''
+				this.refreshData()
+			},
+
+			// 标题搜索
+			searchByTitle() {
+				const val = this.tagInput.trim()
+				if (!val) return
+				this.ALLtweetList = []
+				this.allpage = 1
+				this.ALLhasMore = true
+				this.searchKeyword = val
+				this.searchtags = []
+				this.saveSearchHistory(val)
+				this.tagInput = ''
+				this.switchMenu('home')
+			},
+
+			// 删除搜索标签
+			removeSearchTag(index) {
+				this.searchtags.splice(index, 1)
+				this.refreshData()
+			},
+
+			// 保存搜索历史
+			saveSearchHistory(keyword) {
+				let history = this.$storage.getItem('searchHistory') || []
+				if (!history.includes(keyword)) {
+					history.unshift(keyword)
+					if (history.length > 20) history = history.slice(0, 20)
+					this.$storage.setItem('searchHistory', history)
+				}
+				this.searchHistory = history
+			},
+
+			// 点击历史记录
+			selectHistory(keyword) {
+				if (!this.searchtags.includes(keyword)) {
+					this.searchtags.push(keyword)
+				}
+				this.tagInput = ''
+				this.showSearchHistory = false
+				this.refreshData()
+			},
+
+			// 清空搜索历史
+			clearSearchHistory() {
+				this.$storage.removeItem('searchHistory')
+				this.searchHistory = []
+				this.showSearchHistory = false
+			},
+
+			// 延迟隐藏历史下拉
+			hideSearchHistoryDelayed() {
+				setTimeout(() => { this.showSearchHistory = false }, 200)
+			},
+
+			// ====== 刷新、重置 ======
+
+			// 刷新（清空数据重载）
+			handleRefresh() {
+				this.refreshData()
+			},
+
+			// 重置（清空标签、关键词再重载）
+			handleReset() {
+				this.searchtags = []
+				this.searchKeyword = ''
+				this.tagInput = ''
+				this.refreshData()
+			},
+
+			// 清除全部搜索标签
+			clearAllTags() {
+				this.searchtags = []
+				this.refreshData()
+			},
+
+			// 刷新数据
+			refreshData() {
+				this.ALLtweetList = []
+				this.allpage = 1
+				this.ALLhasMore = true
+				if (this.activeMenu === 'home') {
+					this.loadTweets()
+				}
+			},
+
+			// 删除自己的评论
+			async deleteComment(comment) {
+				try {
+					await this.$request({
+						action: 'delete',
+						tablename: 'u4_commit',
+						params: { id: comment.id }
+					})
+
+					// 更新推文表评论数
+					try {
+						const sql = 'UPDATE u4_Tweet SET comments = GREATEST(0, comments - 1) WHERE id = ?'
+						await this.$request({
+							action: 'executeSql',
+							tablename: 'u4_Tweet',
+							params: { sql, values: [this.currentTweetDetail.id] }
+						})
+					} catch (e) {
+						console.error('更新推文评论数失败:', e)
+					}
+
+					// 从列表中移除
+					const idx = this.detailComments.findIndex(c => c.id === comment.id)
+					if (idx !== -1) {
+						this.detailComments.splice(idx, 1)
+						this.currentTweetDetail.comments = Math.max(0, (this.currentTweetDetail.comments || 0) - 1)
+					} else {
+						// 可能是回复，从父评论的replies中移除
+						for (const c of this.detailComments) {
+							const rIdx = c.replies.findIndex(r => r.id === comment.id)
+							if (rIdx !== -1) {
+								c.replies.splice(rIdx, 1)
+								c.soncount = Math.max(0, (c.soncount || 0) - 1)
+								break
+							}
+						}
+					}
+					uni.showToast({ title: '删除成功', icon: 'success' })
+				} catch (e) {
+					console.error('删除评论失败:', e)
+					uni.showToast({ title: '删除失败', icon: 'none' })
+				}
+			},
+
+			// 点赞推文（数据库同步）
+			async likeTweet(tweet) {
+				if (this.guestGuard()) return
+				const newLiked = !tweet.isLiked
+				const id = tweet.id
+
+				// 同步数据库
+				try {
+					if (newLiked) {
+						await this.$request({
+							action: 'add',
+							tablename: 'u4_Tweet_state',
+							params: {
+								Tweetid: id,
+								username: this.userInfo.username,
+								islike: 1
+							}
+						})
+						if (!this.likedIds.includes(id)) {
+							this.likedIds.push(id)
+						}
+					} else {
+						const stateResult = await this.$request({
+							action: 'getList',
+							tablename: 'u4_Tweet_state',
+							params: {
+								query: { Tweetid: id, username: this.userInfo.username },
+								page: 1,
+								pageSize: 1
+							}
+						})
+						const stateList = this.$parseNestedJson(stateResult) || []
+						if (stateList.length > 0) {
+							await this.$request({
+								action: 'delete',
+								tablename: 'u4_Tweet_state',
+								params: { id: stateList[0].id }
+							})
+						}
+						const idx = this.likedIds.indexOf(id)
+						if (idx !== -1) {
+							this.likedIds.splice(idx, 1)
+						}
+					}
+				} catch (e) {
+					console.error('同步点赞到数据库失败:', e)
+				}
+
+				// 更新推文表点赞数
+				try {
+					const delta = newLiked ? 1 : -1
+					const sql = 'UPDATE u4_Tweet SET likes = likes + ? WHERE id = ?'
+					await this.$request({
+						action: 'executeSql',
+						tablename: 'u4_Tweet',
+						params: { sql, values: [delta, id] }
+					})
+				} catch (e) {
+					console.error('更新推文点赞数失败:', e)
+				}
+
+				tweet.isLiked = newLiked
+				tweet.likes = (tweet.likes || 0) + (newLiked ? 1 : -1)
+			},
+
+			// 预览图片
+			previewImage(items, index = 0) {
+				if (!items || items.length === 0) return
+				const urls = items.map(item => typeof item === 'string' ? item : item.url).filter(Boolean)
+				if (urls.length === 0) return
+				this.$refs.preview.open(urls, index)
+			},
+
+			// 加载通知
+			async loadNotifications() {
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_notify',
+						params: {
+							query: {
+								$or: [
+									{ receivedusername: 'all' },
+									{ receivedusername: this.userInfo.username }
+								]
+							},
+							page: 1,
+							pageSize: 9999,
+							order: 'desc',
+							orderBy: 'id'
+						}
+					})
+					this.notifyList = this.$parseNestedJson(result) || []
+					this.calculateUnreadCount()
+				} catch (e) {
+					console.error('加载通知失败:', e)
+				}
+			},
+
+			// 计算未读数量
+			calculateUnreadCount() {
+				this.unreadOfficialCount = this.notifyList.filter(msg =>
+					msg.type === 0 && msg.isread === 0
+				).length;
+
+				// 个人未读从chatRecords计算
+				const totalUnread = this.chatRecordsList.reduce((sum, r) => sum + (r.unread || 0), 0)
+				this.unreadPersonalCount = totalUnread
+				this.unreadMessageCount = totalUnread
+				this.unreadNotifyCount = this.unreadOfficialCount
+			},
+
+			// 阅读官方消息
+			async readOfficialMessage(msg) {
+				if (msg.isread === 0 && msg.receivedusername !== 'all') {
+					try {
+						await this.$request({
+							action: 'update',
+							tablename: 'u4_notify',
+							params: { id: msg.id, isread: 1 }
+						})
+						msg.isread = 1
+						this.calculateUnreadCount()
+					} catch (e) {
+						console.error('标记已读失败:', e)
+					}
+				}
+				// 进入通知详情
+				this.currentNotifyDetail = msg
+				this.showNotifyDetail = true
+			},
+
+			// 关闭通知详情
+			closeNotifyDetail() {
+				this.showNotifyDetail = false
+				this.currentNotifyDetail = null
+			},
+
+			// 渲染Markdown为HTML
+			renderMarkdown(text) {
+				if (!text) return ''
+				let html = text
+					// 转义HTML特殊字符
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;')
+					// 换行转p
+					.replace(/\r\n/g, '\n')
+					// 代码块 ``` ``` 
+					.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+					// 行内代码 `
+					.replace(/`([^`]+)`/g, '<code>$1</code>')
+					// 标题 ###
+					.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+					.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+					.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+					// 加粗 ** **
+					.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+					// 斜体 * *
+					.replace(/\*(.+?)\*/g, '<em>$1</em>')
+					// 链接 [text](url)
+					.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#4A90D9;text-decoration:underline">$1</a>')
+					// 无序列表 - item
+					.replace(/^- (.+)$/gm, '<li>$1</li>')
+					// 数字列表
+					.replace(/^\d+\.\s(.+)$/gm, '<li>$1</li>')
+					// 段落（连续两个换行分段）
+					.replace(/\n\n/g, '</p><p>')
+					// 单换行变br
+					.replace(/\n/g, '<br/>')
+
+				html = '<p>' + html + '</p>'
+				// 包裹列表
+				html = html.replace(/(<li>.*?<\/li>)/g, '<ul>$1</ul>')
+				html = html.replace(/<\/ul>\s*<ul>/g, '')
+				// 清理空p
+				html = html.replace(/<p>\s*<\/p>/g, '')
+				// 处理保留的换行
+				html = html.replace(/<\/p>\s*<p>/g, '</p><p>')
+				return html
+			},
+
+			// ====== 聊天记录 & 聊天 ======
+
+			// 加载聊天记录列表（个人消息用）
+			async loadChatRecords() {
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_chatRecord',
+						params: {
+							query: { username: this.userInfo.username },
+							page: 1,
+							pageSize: 9999,
+							order: 'desc',
+							orderBy: 'time'
+						}
+					})
+					this.chatRecordsList = this.$parseNestedJson(result) || []
+					this.calculateUnreadCount()
+				} catch (e) {
+					console.error('加载聊天记录失败:', e)
+				}
+			},
+
+			// 点击聊天记录进入聊天
+			openChatByRecord(rec) {
+				this.chatUser = {
+					username: rec.sendusername,
+					nickname: rec.sendnickname,
+					cover: rec.sendcover
+				}
+				this.chatMessages = []
+				this.chatPage = 1
+				this.chatHasMore = true
+				this.chatInput = ''
+				this.activeMenu = 'chat'
+				this.updateUrlParams()
+				this.loadChatMessages()
+
+				// 清零未读
+				if (rec.unread > 0) {
+					this.clearChatUnread(rec)
+				}
+			},
+
+			// 清零聊天未读
+			async clearChatUnread(rec) {
+				try {
+					await this.$request({
+						action: 'update',
+						tablename: 'u4_chatRecord',
+						params: { id: rec.id, unread: 0 }
+					})
+					rec.unread = 0
+					this.calculateUnreadCount()
+				} catch (e) {
+					console.error('清零未读失败:', e)
+				}
+			},
+
+			// 关闭聊天返回消息列表
+			closeChatPage() {
+				this.activeMenu = 'messages'
+				this.messageTab = 'personal'
+				this.chatUser = null
+				this.updateUrlParams()
+				this.loadChatRecords()
+			},
+
+			// 加载聊天消息
+			async loadChatMessages() {
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_notify',
+						params: {
+							query: {
+								type: 1,
+								status: 2,
+								$or: [
+									{ sendusername: this.userInfo.username, receivedusername: this.chatUser.username },
+									{ sendusername: this.chatUser.username, receivedusername: this.userInfo.username }
+								]
+							},
+							page: this.chatPage,
+							pageSize: 50,
+							order: 'asc',
+							orderBy: 'time'
+						}
+					})
+					let list = this.$parseNestedJson(result) || []
+					if (list.length === 0) {
+						this.chatHasMore = false
+						return
+					}
+					if (this.chatPage === 1) {
+						this.chatMessages = list
+					} else {
+						this.chatMessages = list.concat(this.chatMessages)
+					}
+					this.chatHasMore = list.length === 50
+					this.chatPage++
+
+					this.$nextTick(() => {
+						this.scrollChatToBottom()
+					})
+				} catch (e) {
+					console.error('加载聊天消息失败:', e)
+				}
+			},
+
+			// 发送聊天消息
+			async sendChatMessage() {
+				const content = this.chatInput.trim()
+				if (!content || !this.chatUser) return
+
+				try {
+					// 1. 写入通知表
+					const result = await this.$request({
+						action: 'add',
+						tablename: 'u4_notify',
+						params: {
+							content: content,
+							receivedusername: this.chatUser.username,
+							receivednickname: this.chatUser.nickname,
+							receivedcover: this.chatUser.cover,
+							isread: 0,
+							type: 1,
+							sendusername: this.userInfo.username,
+							sendnickname: this.userInfo.nickname,
+							sendcover: this.userInfo.head || '',
+							parent: 0,
+							status: 2,
+							time: Date.now()
+						}
+					})
+					const insertId = result && (result.insertId || result.data?.insertId) || Date.now()
+
+					// 2. 更新或创建聊天记录
+					const existingResult = await this.$request({
+						action: 'getList',
+						tablename: 'u4_chatRecord',
+						params: {
+							query: {
+								username: this.userInfo.username,
+								sendusername: this.chatUser.username
+							},
+							page: 1,
+							pageSize: 1
+						}
+					})
+					const existing = this.$parseNestedJson(existingResult) || []
+					if (existing.length > 0) {
+						await this.$request({
+							action: 'update',
+							tablename: 'u4_chatRecord',
+							params: {
+								id: existing[0].id,
+								lastcontent: content,
+								time: Date.now()
+							}
+						})
+					} else {
+						await this.$request({
+							action: 'add',
+							tablename: 'u4_chatRecord',
+							params: {
+								username: this.userInfo.username,
+								sendusername: this.chatUser.username,
+								sendnickname: this.chatUser.nickname,
+								sendcover: this.chatUser.cover,
+								lastcontent: content,
+								unread: 0,
+								time: Date.now()
+							}
+						})
+					}
+
+					// 3. 给对方的聊天记录增加未读
+					const theirResult = await this.$request({
+						action: 'getList',
+						tablename: 'u4_chatRecord',
+						params: {
+							query: {
+								username: this.chatUser.username,
+								sendusername: this.userInfo.username
+							},
+							page: 1,
+							pageSize: 1
+						}
+					})
+					const theirRecord = this.$parseNestedJson(theirResult) || []
+					if (theirRecord.length > 0) {
+						await this.$request({
+							action: 'executeSql',
+							tablename: 'u4_chatRecord',
+							params: {
+								sql: 'UPDATE u4_chatRecord SET unread = unread + 1, lastcontent = ?, time = ? WHERE id = ?',
+								values: [content, Date.now(), theirRecord[0].id]
+							}
+						})
+					} else {
+						await this.$request({
+							action: 'add',
+							tablename: 'u4_chatRecord',
+							params: {
+								username: this.chatUser.username,
+								sendusername: this.userInfo.username,
+								sendnickname: this.userInfo.nickname,
+								sendcover: this.userInfo.head || '',
+								lastcontent: content,
+								unread: 1,
+								time: Date.now()
+							}
+						})
+					}
+
+					// 4. 更新对方user表的Noticenum
+					try {
+						const sql = 'UPDATE u4_user SET Noticenum = Noticenum + 1 WHERE username = ?'
+						await this.$request({
+							action: 'executeSql',
+							tablename: 'u4_user',
+							params: { sql, values: [this.chatUser.username] }
+						})
+					} catch (e) {
+						console.error('更新对方通知数失败:', e)
+					}
+
+					this.chatMessages.push({
+						id: insertId,
+						content: content,
+						receivedusername: this.chatUser.username,
+						type: 1,
+						sendusername: this.userInfo.username,
+						sendnickname: this.userInfo.nickname,
+						sendcover: this.userInfo.head || '',
+						status: 2,
+						time: Date.now()
+					})
+					this.chatInput = ''
+					this.$nextTick(() => {
+						this.scrollChatToBottom()
+					})
+				} catch (e) {
+					console.error('发送消息失败:', e)
+				}
+			},
+
+			// 聊天滚动到底部
+			scrollChatToBottom() {
+				const container = document.querySelector('.chat-page-messages')
+				if (container) container.scrollTop = container.scrollHeight
+			},
+
+			// 发布推文
+			publishTweet() {
+				if (this.guestGuard()) return
+				if (!this.newTweet.title.trim()) {
+					this.$youToast({
+						title: '提示',
+						message: '请输入标题',
+						type: 'warning',
+						duration: 2000
+					})
+					return
+				}
+
+				const publishFn = async () => {
+					// 1. 处理新增媒体，获取ID
+					let newIds = []
+					if (this.selectedNewMedia.length > 0) {
+					    // 1. 打印原始数据
+					    console.log('原始 selectedNewMedia:', this.selectedNewMedia)
+					    
+					    // 2. 去除 _isNew 属性，复制一份新数组
+					    const cleanMediaList = this.selectedNewMedia.map(item => {
+					        const { _isNew, ...rest } = item  // 解构去掉 _isNew
+					        return rest
+					    })
+					    
+					    // 3. 打印去除 _isNew 后的数据
+					    console.log('去除 _isNew 后的数据:', cleanMediaList)
+					    
+					    // 4. 调用插入方法
+					    newIds = await this.$addmediagetids(cleanMediaList)
+					    
+					    // 5. 打印返回的ID结果
+					    console.log('插入后返回的ID数组:', newIds)
+					}
+
+					// 2. 合并所有媒体ID
+					const mediaIds = []
+					this.selectedMediaList.forEach(item => {
+						if (item.id && !item._isNew) {
+							mediaIds.push(item.id)
+						}
+					})
+					newIds.forEach(id => mediaIds.push(id))
+
+					const ishavemore = this.newTweet.content && this.newTweet.content.trim().length > 0
+					const requestData = {
+						title: this.newTweet.title.trim(),
+						content: this.newTweet.content.trim() || '',
+						mediald: JSON.stringify(mediaIds),
+						ishavemore: ishavemore ? 1 : 0,
+						tags: JSON.stringify(this.newTweet.tags),
+						alist: JSON.stringify(this.newTweet.alist),
+						likes: 0,
+						comments: 0,
+						level: 1,
+						username: this.userInfo.username,
+						nickname: this.userInfo.nickname,
+						grade: this.userInfo.grade || 0,
+						cover: this.userInfo.head || '',
+						time: Date.now(),
+						status: 1
+					}
+
+					await this.$request({
+						action: 'add',
+						tablename: 'u4_Tweet',
+						params: requestData
+					})
+
+					this.$youToast({
+						title: '发布成功',
+						message: '您的推文已提交，等待审核',
+						type: 'success',
+						duration: 2000
+					})
+					this.showPublishModal = false
+					this.resetNewTweet()
+				}
+
+				publishFn().catch(e => {
+					this.$youToast({
+						title: '发布失败',
+						message: e.message || '网络错误，请稍后重试',
+						type: 'error',
+						duration: 2500
+					})
+				})
+			},
+			// 重置新推文
+			resetNewTweet() {
+				this.newTweet = {
+					title: '',
+					content: '',
+					tags: [],
+					mediaId: [],
+					alist: []
+				}
+				this.tagInput = ''
+				this.selectedMediaList = []
+				this.selectedNewMedia = []
+				this.alistTitleInput = ''
+				this.alistUrlInput = ''
+			},
+
+			// 选择分类
+			selectCategory(e) {
+				this.newTweet.category = this.categories[e.detail.value];
+			},
+
+			// 添加标签
+			addTag() {
+				if (this.tagInput.trim() && !this.newTweet.tags.includes(this.tagInput.trim())) {
+					this.newTweet.tags.push(this.tagInput.trim());
+					this.tagInput = '';
+				}
+			},
+
+			// 移除标签
+			removeTag(index) {
+				this.newTweet.tags.splice(index, 1);
+			},
+
+			// ===== 媒体选择 =====
+
+			openChooseImage() {
+				this.$refs.chooseImage && this.$refs.chooseImage.open()
+			},
+
+			openMediaSelector() {
+				this.$refs.mediaSelector && this.$refs.mediaSelector.open()
+			},
+
+			handleChooseImageConfirm(images) {
+				if (images && images.length > 0) {
+					images.forEach(img => {
+						if (!this.selectedMediaList.find(m => m.id === img.id)) {
+							this.selectedMediaList.push(img)
+						}
+					})
+					this.$set(this, 'selectedMediaList', [...this.selectedMediaList])
+				}
+			},
+
+			handleMediaSelectorConfirm(mediaList) {
+				console.log(mediaList);
+				this.mediaList = mediaList
+				if (mediaList && mediaList.length > 0) {
+					mediaList.forEach(m => {
+						if (!m.id) {
+							m._isNew = true
+							if (!this.selectedNewMedia.find(n => n.url === m.url)) {
+								this.selectedNewMedia.push(m)
+							}
+						}
+						if (!this.selectedMediaList.find(ex => ex.url === m.url)) {
+							this.selectedMediaList.push(m)
+						}
+					})
+					this.$set(this, 'selectedMediaList', [...this.selectedMediaList])
+					this.$set(this, 'selectedNewMedia', [...this.selectedNewMedia])
+				}
+			},
+
+			removeSelectedMedia(idx) {
+				const removed = this.selectedMediaList[idx]
+				this.selectedMediaList.splice(idx, 1)
+				if (removed && removed._isNew) {
+					const ni = this.selectedNewMedia.findIndex(m => m.url === removed.url)
+					if (ni !== -1) this.selectedNewMedia.splice(ni, 1)
+				}
+				this.$set(this, 'selectedMediaList', [...this.selectedMediaList])
+				this.$set(this, 'selectedNewMedia', [...this.selectedNewMedia])
+			},
+
+			// ===== A链接 =====
+
+			addAlistItem() {
+				const url = this.alistUrlInput.trim()
+				if (!url) {
+					uni.showToast({ title: '链接URL不能为空', icon: 'none' })
+					return
+				}
+				this.newTweet.alist.push({
+					title: this.alistTitleInput.trim(),
+					url: url
+				})
+				this.$set(this.newTweet, 'alist', [...this.newTweet.alist])
+				this.alistTitleInput = ''
+				this.alistUrlInput = ''
+			},
+
+			removeAlistItem(idx) {
+				this.newTweet.alist.splice(idx, 1)
+				this.$set(this.newTweet, 'alist', [...this.newTweet.alist])
+			},
+
+			// 关闭作者页面
+			closeAuthorPage() {
+				this.activeMenu = 'home'
+				this.currentAuthor = {}
+				this.authorWorks = []
+				this.updateUrlParams()
+			},
+
+			// 从作者页@ TA
+			async mentionAuthorFromPage() {
+				if (this.guestGuard()) return
+				const author = { ...this.currentAuthor }
+				this.currentAuthor = {}
+				this.authorWorks = []
+				this.currentTweetDetail = null
+				await this.mentionAuthorWith(author)
+			},
+
+			// @作者（可指定用户）
+			async mentionAuthorWith(author) {
+				this.newComment = `@${author.nickname} `
+				const content = `来自 ${this.userInfo.nickname} 的消息`
+				try {
+					await this.$request({
+						action: 'add',
+						tablename: 'u4_notify',
+						params: {
+							content: content,
+							receivedusername: author.username,
+							receivednickname: author.nickname,
+							receivedcover: author.cover,
+							isread: 0, type: 1,
+							sendusername: this.userInfo.username,
+							sendnickname: this.userInfo.nickname,
+							sendcover: this.userInfo.head || '',
+							parent: 0, status: 2, time: Date.now()
+						}
+					})
+					const upsertChat = async (username, sendusername, sendnickname, sendcover, isUnread) => {
+						const rec = await this.$request({
+							action: 'getList', tablename: 'u4_chatRecord',
+							params: { query: { username, sendusername }, page: 1, pageSize: 1 }
+						})
+						const list = this.$parseNestedJson(rec) || []
+						if (list.length > 0) {
+							const sql = isUnread
+								? 'UPDATE u4_chatRecord SET unread = unread + 1, lastcontent = ?, time = ? WHERE id = ?'
+								: 'UPDATE u4_chatRecord SET lastcontent = ?, time = ? WHERE id = ?'
+							const vals = [content, Date.now(), list[0].id]
+							await this.$request({ action: 'executeSql', tablename: 'u4_chatRecord', params: { sql, values: vals } })
+						} else {
+							await this.$request({
+								action: 'add', tablename: 'u4_chatRecord',
+								params: { username, sendusername, sendnickname, sendcover, lastcontent: content, unread: isUnread ? 1 : 0, time: Date.now() }
+							})
+						}
+					}
+					await upsertChat(this.userInfo.username, author.username, author.nickname, author.cover, false)
+					await upsertChat(author.username, this.userInfo.username, this.userInfo.nickname, this.userInfo.head || '', true)
+					await this.$request({
+						action: 'executeSql', tablename: 'u4_user',
+						params: { sql: 'UPDATE u4_user SET Noticenum = Noticenum + 1 WHERE username = ?', values: [author.username] }
+					})
+					this.updateUrlParams()
+				} catch (e) {
+					console.error('发送通知失败:', e)
+				}
+				// 进入聊天界面
+				this.chatUser = {
+					username: author.username,
+					nickname: author.nickname,
+					cover: author.cover
+				}
+				this.chatMessages = []
+				this.chatPage = 1
+				this.chatHasMore = true
+				this.chatInput = ''
+				this.activeMenu = 'chat'
+				this.updateUrlParams()
+				this.loadChatMessages()
+				uni.showToast({ title: `已@${author.nickname}`, icon: 'success' })
+			},
+
+			// 加载更多作者作品（scrolltolower触发）
+			loadMoreAuthorWorks() {
+				if (!this.authorHasMore || this.authorLoading) return
+				this.authorLoading = true
+				this.loadAuthorWorks(this.currentAuthor.username).finally(() => { this.authorLoading = false })
+			},
+
+			// 跳转到作者页面
+			goToAuthor(tweet) {
+				if (this.guestGuard()) return
+				this.currentAuthor = {
+					username: tweet.username,
+					nickname: tweet.nickname,
+					cover: tweet.cover
+				}
+				this.authorWorks = []
+				this.authorPage = 1
+				this.authorHasMore = true
+				this.activeMenu = 'author'
+				this.currentTweetDetail = null
+				this.updateUrlParams()
+				this.loadAuthorWorks(tweet.username)
+			},
+
+			// 加载作者作品
+			async loadAuthorWorks(username) {
+				this.authorLoading = true
+				try {
+					const result = await this.$request({
+						action: 'getList',
+						tablename: 'u4_Tweet',
+						params: {
+							query: this.buildQuery({ username: username }),
+							page: this.authorPage,
+							pageSize: 10,
+							order: 'desc',
+							orderBy: 'id'
+						}
+					})
+					let list = this.$parseNestedJson(result) || []
+					for (const tweet of list) {
+						tweet._mediaItems = []
+						if (tweet.mediald && tweet.mediald.length > 0) {
+							let ids = tweet.mediald
+							if (typeof ids === 'string') {
+								try { ids = JSON.parse(ids) } catch (e) { ids = [] }
+							}
+							if (Array.isArray(ids) && ids.length > 0) {
+								const mediaResult = await this.$getmediabyid(ids)
+								const items = Array.isArray(mediaResult) ? mediaResult : [mediaResult]
+								this.$set(tweet, '_mediaItems', items)
+							}
+						}
+						if (tweet.tags && typeof tweet.tags === 'string') {
+							try { tweet.tags = JSON.parse(tweet.tags) } catch (e) { tweet.tags = [] }
+						}
+						if (tweet.alist && typeof tweet.alist === 'string') {
+							try { tweet.alist = JSON.parse(tweet.alist) } catch (e) { tweet.alist = [] }
+						}
+						tweet.commentCount = tweet.comments || 0
+						tweet.likes = tweet.likes || 0
+						tweet.isLiked = this.likedIds.includes(tweet.id)
+					}
+					if (this.authorPage === 1) {
+						this.authorWorks = list
+					} else {
+						this.authorWorks = this.authorWorks.concat(list)
+					}
+					this.authorHasMore = list.length === 10
+					this.authorPage++
+				} catch (e) {
+					console.error('加载作者作品失败:', e)
+				} finally {
+					this.authorLoading = false
+				}
+			},
+
+			// @作者（弹窗用）
+			async mentionAuthor() {
+				if (this.guestGuard()) return
+				this.showAuthorModal = false
+				const author = { ...this.currentAuthor }
+				this.currentAuthor = {}
+				this.authorWorks = []
+				await this.mentionAuthorWith(author)
+			},
+
+			// 切换到内门
+			switchToInner() {
+				// 游客禁止进入内门
+				if (this.isGuestMode) {
+					uni.showToast({ title: '游客请先登录', icon: 'none' })
+					return
+				}
+				uni.showToast({
+					title: '正在进入内门...',
+					icon: 'success'
+				});
+				// TODO: 跳转到内门页面
+				uni.navigateTo({
+					url:'/pages/index/index2'
+				})
+			},
+
+			// 游客守卫：返回true表示被拦截
+			guestGuard() {
+				if (this.isGuestMode) {
+					uni.showToast({ title: '游客请先登录', icon: 'none' })
+					return true
+				}
+				return false
+			},
+
+			// 处理充值
+			handleRecharge() {
+				uni.showToast({
+					title: '跳转到充值页面...',
+					icon: 'success'
+				});
+				this.showUpgradeModal = false;
+			},
+
+			// 进入编辑模式
+			enterEditMode() {
+				this.editMode = true;
+				this.editUserInfo = {
+					...this.userInfo
+				};
+			},
+
+			// 头像选择回调
+			handleHeadConfirm(images) {
+				if (images && images.length > 0) {
+					this.editUserInfo.head = images[0].url
+				}
+			},
+
+			// 保存资料
+			async saveProfile() {
+				const updated = { ...this.editUserInfo }
+				try {
+					await this.$request({
+						action: 'update',
+						tablename: 'u4_user',
+						params: {
+							id: this.userInfo.id,
+							email: updated.email || this.userInfo.email,
+							nickname: updated.nickname || this.userInfo.nickname,
+							password: updated.password || this.userInfo.password,
+							head: updated.head || this.userInfo.head
+						}
+					})
+
+					const oldInfo = { ...this.userInfo }
+
+					this.userInfo = { ...this.userInfo, ...updated }
+					this.editMode = false
+
+					// 同步昵称/头像到已发布推文
+					const nameChanged = updated.nickname && updated.nickname !== oldInfo.nickname
+					const headChanged = updated.head && updated.head !== oldInfo.head
+
+					if (nameChanged || headChanged) {
+						await this.syncTweetProfile(nameChanged ? updated.nickname : null, headChanged ? updated.head : null)
+					} else {
+					}
+
+					this.$youToast.success('保存成功')
+				} catch (e) {
+					this.$youToast.error('保存失败')
+				}
+			},
+
+			// 同步昵称/头像到已发布推文
+			async syncTweetProfile(nickname, head) {
+				try {
+					// 直接执行 UPDATE，不用 getCount（兼容性好）
+					const setParts = []
+					const values = []
+					if (nickname) {
+						setParts.push('nickname = ?')
+						values.push(nickname)
+					}
+					if (head) {
+						setParts.push('cover = ?')
+						values.push(head)
+					}
+					values.push(this.userInfo.username)
+					const sql = `UPDATE u4_Tweet SET ${setParts.join(', ')} WHERE username = ?`
+
+					await this.$request({
+						action: 'executeSql',
+						tablename: 'u4_Tweet',
+						params: { sql, values }
+					})
+
+					// 查一下影响了多少条（确认结果）
+					const countResult = this.$parseNestedJson(await this.$request({
+						action: 'getCount',
+						tablename: 'u4_Tweet',
+						params: { query: { username: this.userInfo.username } }
+					}))
+					const total = typeof countResult === 'number' ? countResult : (countResult && countResult.count) || 0
+					
+
+					if (total > 0) {
+						this.showProgress(total)
+						this.updateProgress(total, `已同步 ${total} 条推文`)
+						setTimeout(() => { this.hideProgress() }, 800)
+					}
+				} catch (e) {
+					this.hideProgress()
+					this.$youToast.error('同步推文信息失败')
+				}
+			},
+
+			// 显示进度条
+			showProgress(total) {
+				this.progressVisible = true
+				this.totalNum = total
+				this.completedNum = 0
+			},
+
+			// 更新进度
+			updateProgress(completed, text) {
+				this.completedNum = completed
+				this.currentText = text
+			},
+
+			// 隐藏进度
+			hideProgress() {
+				this.progressVisible = false
+			},
+
+			// 取消编辑
+			cancelEdit() {
+				this.editMode = false;
+				this.editUserInfo = {};
+			},
+
+			// 切换通知
+			toggleNotification(e) {
+				this.notificationEnabled = e.detail.value;
+			},
+
+			// 清除缓存
+			clearCache() {
+				uni.showModal({
+					title: '提示',
+					content: '确定要清除缓存吗？',
+					success: (res) => {
+						if (res.confirm) {
+							uni.showToast({
+								title: '清除成功',
+								icon: 'success'
+							});
+						}
+					}
+				});
+			},
+
+			// 退出登录
+			logout2() {
+				uni.showModal({
+					title: '提示',
+					content: '确定要退出登录吗？',
+					success: (res) => {
+						if (res.confirm) {
+							uni.showToast({
+								title: '已退出',
+								icon: 'success'
+							});
+						}
+					}
+				});
+			},
+			
+			async logout() {
+				try {
+					if(this.$storage.getItem('isGuest')){
+						this.$storage.setItem('isGuest',false);
+						uni.showToast({ title: '退出成功', icon: 'success' })
+						setTimeout(() => {
+							uni.navigateTo({ url: '/pages/index/index2' })
+						}, 800)
+						return
+					}
+
+					const currentDeviceId = getDeviceId();
+					let deviceList = Array.isArray(this.userInfo.deviceList) ? this.userInfo.deviceList : [];
+					deviceList = deviceList.filter(item => item.id !== currentDeviceId);
+
+					this.$set(this, 'userInfo', {
+						...this.userInfo,
+						deviceList: deviceList
+					});
+
+					await this.$request({
+						action: 'update',
+						tablename: 'u4_user',
+						params: {
+							id: this.userInfo.id,
+							deviceList: deviceList
+						}
+					});
+
+					if (this.$storage && typeof this.$storage.removeItem === 'function') {
+						this.$storage.removeItem('currentUser');
+					}
+
+					uni.showToast({ title: '退出成功', icon: 'success' })
+					setTimeout(() => {
+						uni.navigateTo({ url: '/pages/index/index2' })
+					}, 800)
+				} catch (error) {
+					console.error('退出登录失败:', error);
+					uni.showToast({ title: '退出失败', icon: 'none' })
+				}
+			},
+
+			// 打开链接（新标签页）
+			openLink(url) {
+				if (!url) return
+				window.open(url, '_blank')
+			},
+
+			// 判断是否为B站视频
+			isBilibiliVideo(url) {
+				if (!url) return false
+				return url.includes('bilibili.com') || url.includes('bilibili')
+			},
+
+			// 格式化媒体URL（处理协议相对地址）
+			getMediaUrl(url) {
+				if (!url) return ''
+				if (url.startsWith('//')) return 'https:' + url
+				return url
+			},
+
+			// 获取B站嵌入播放器地址
+			getBilibiliEmbedUrl(url) {
+				const bvMatch = url.match(/BV[a-zA-Z0-9]+/)
+				if (!bvMatch) return url
+				const bvid = bvMatch[0]
+				return `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${bvid}&autoplay=0&muted=1&high_quality=1&danmaku=0`
+			},
+			// 视频悬浮预览
+			playVideo(e) {
+				const video = e.currentTarget
+				video.play().catch(() => {})
+			},
+			pauseVideo(e) {
+				const video = e.currentTarget
+				video.pause()
+			},
+
+			// B站视频激活
+			activateBilibili(index) {
+				this.$set(this.bilibiliActive, index, true)
+			},
+			activateBilibiliDetail(index) {
+				this.$set(this.bilibiliActiveDetail, index, true)
+			},
+
+			// 格式化时间
+			formatTime(timestamp) {
+				const now = Date.now();
+				const diff = now - timestamp;
+
+				const minute = 60 * 1000;
+				const hour = 60 * minute;
+				const day = 24 * hour;
+				const month = 30 * day;
+
+				if (diff < minute) {
+					return '刚刚';
+				} else if (diff < hour) {
+					return Math.floor(diff / minute) + '分钟前';
+				} else if (diff < day) {
+					return Math.floor(diff / hour) + '小时前';
+				} else if (diff < month) {
+					return Math.floor(diff / day) + '天前';
+				} else {
+					const date = new Date(timestamp);
+					return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+				}
+			}
+		}
+	};
+</script>
+
+<style lang="scss" scoped>
+	// 颜色变量
+	$primary-color: #FF6B6B;
+	$secondary-color: #4ECDC4;
+	$text-primary: #333;
+	$text-secondary: #666;
+	$text-muted: #999;
+	$border-color: #e8e8e8;
+	$bg-light: #f5f5f5;
+	$shadow-light: rgba(0, 0, 0, 0.08);
+
+	// 黑夜模式颜色
+	$dark-bg: #1a1a1a;
+	$dark-bg-secondary: #242424;
+	$dark-text-primary: #e8e8e8;
+	$dark-text-secondary: #b0b0b0;
+	$dark-text-muted: #666;
+	$dark-border-color: #333;
+
+	/* 基础容器 */
+	.twitter-container {
+		width: 100%;
+		min-height: 100vh;
+		background-color: $bg-light;
+		transition: all 0.3s ease;
+
+		&.dark-mode {
+			background-color: $dark-bg;
+		}
+	}
+
+	/* 顶部导航栏 */
+	.top-navbar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 60px;
+		background: #fff;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 20px;
+		box-shadow: 0 2px 8px $shadow-light;
+		z-index: 1000;
+		transition: all 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	.logo {
+		flex-shrink: 0;
+
+		.logo-text {
+			font-size: 20px;
+			font-weight: bold;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			background-clip: text;
+		}
+	}
+
+	.search-box {
+		flex: 1;
+		max-width: 500px;
+		margin: 0 20px;
+		position: relative;
+
+		.search-input {
+			width: 100%;
+			height: 40px;
+			padding: 0 55px 0 15px;
+			background: $bg-light;
+			border-radius: 20px;
+			border: 1px solid transparent;
+			outline: none;
+			transition: all 0.3s ease;
+			color: $text-primary;
+
+			.dark-mode & {
+				background: $dark-bg;
+				color: $dark-text-primary;
+				border-color: $dark-border-color;
+			}
+
+			&:focus {
+				border-color: $primary-color;
+			}
+		}
+
+		.search-icon {
+			position: absolute;
+			top: 50%;
+			transform: translateY(-50%);
+			cursor: pointer;
+			font-size: 18px;
+			line-height: 1;
+			opacity: 0.6;
+			transition: all 0.3s ease;
+			&:hover { opacity: 1; }
+
+			&.search-icon-title {
+				right: 30px;
+			}
+			&.search-icon-tag {
+				right: 8px;
+				font-weight: bold;
+				font-size: 16px;
+			}
+		}
+
+		.search-history-dropdown {
+			position: absolute;
+			top: 100%;
+			left: 0;
+			right: 0;
+			background: #fff;
+			border-radius: 10px;
+			box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+			z-index: 100;
+			padding: 8px 0;
+			margin-top: 4px;
+
+			.dark-mode & {
+				background: $dark-bg-secondary;
+				box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+			}
+
+			.search-history-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 6px 14px;
+				font-size: 12px;
+
+				.search-history-title {
+					color: $text-muted;
+					.dark-mode & { color: $dark-text-muted; }
+				}
+
+				.search-history-clear {
+					color: $primary-color;
+					cursor: pointer;
+					&:hover { opacity: 0.8; }
+				}
+			}
+
+			.search-history-item {
+				padding: 8px 14px;
+				font-size: 14px;
+				color: $text-primary;
+				cursor: pointer;
+				.dark-mode & { color: $dark-text-primary; }
+				&:hover { background: $bg-light; .dark-mode & { background: $dark-bg; } }
+			}
+		}
+	}
+
+	/* 搜索标签栏 */
+	.search-tags-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		border-bottom: 1px solid $border-color;
+		.dark-mode & { border-bottom-color: $dark-border-color; }
+
+		.search-tags-list {
+			flex: 1;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+		}
+
+		.search-tag-chip {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			padding: 4px 10px;
+			background: rgba($primary-color, 0.1);
+			border-radius: 14px;
+			font-size: 13px;
+			color: $primary-color;
+			.dark-mode & { background: rgba($primary-color, 0.2); }
+
+			.search-tag-remove {
+				cursor: pointer;
+				font-size: 16px;
+				line-height: 1;
+				color: $primary-color;
+				opacity: 0.7;
+				&:hover { opacity: 1; }
+			}
+		}
+
+		.search-tags-clear-all {
+			flex-shrink: 0;
+			font-size: 12px;
+			color: $text-muted;
+			cursor: pointer;
+			padding: 4px 8px;
+			white-space: nowrap;
+			.dark-mode & { color: $dark-text-muted; }
+			&:hover { color: $primary-color; }
+		}
+	}
+
+	.top-actions {
+		display: flex;
+		align-items: center;
+		gap: 15px;
+	}
+
+	.action-btn {
+		position: relative;
+		width: 40px;
+		height: 40px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		border-radius: 50%;
+		transition: all 0.3s ease;
+
+		&:hover {
+			background: $bg-light;
+
+			.dark-mode & {
+				background: $dark-bg;
+			}
+		}
+
+		.icon {
+			font-size: 20px;
+		}
+	}
+
+	.badge {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		min-width: 18px;
+		height: 18px;
+		background: $primary-color;
+		color: #fff;
+		border-radius: 9px;
+		font-size: 11px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 5px;
+		font-weight: bold;
+	}
+
+	.publish-btn {
+		background: linear-gradient(135deg, $primary-color, lighten($primary-color, 10%));
+		color: #fff;
+
+		&:hover {
+			transform: scale(1.05);
+		}
+	}
+
+	.user-info {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		cursor: pointer;
+		padding: 5px 10px;
+		border-radius: 20px;
+		transition: all 0.3s ease;
+
+		&:hover {
+			background: $bg-light;
+
+			.dark-mode & {
+				background: $dark-bg;
+			}
+		}
+
+		.user-avatar {
+			width: 40px;
+			height: 40px;
+			border-radius: 50%;
+			border: 2px solid $primary-color;
+		}
+
+		.user-detail {
+			display: flex;
+			flex-direction: column;
+		}
+
+		.user-nickname {
+			font-size: 14px;
+			font-weight: bold;
+			color: $text-primary;
+
+			.dark-mode & {
+				color: $dark-text-primary;
+			}
+		}
+
+		.user-level {
+			font-size: 12px;
+			color: $text-secondary;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			background-clip: text;
+			font-weight: bold;
+		}
+	}
+
+	/* 主体内容 */
+	.main-content {
+		display: flex;
+		padding-top: 60px;
+		max-width: 1400px;
+		margin: 0 auto;
+	}
+
+	/* 左侧导航栏 */
+	.left-sidebar {
+		position: fixed;
+		left: 0;
+		top: 60px;
+		bottom: 0;
+		width: 260px;
+		background: #fff;
+		padding: 20px 0;
+		overflow-y: auto;
+		border-right: 1px solid $border-color;
+		transition: all 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			border-right-color: $dark-border-color;
+		}
+
+		&::-webkit-scrollbar {
+			width: 6px;
+		}
+
+		&::-webkit-scrollbar-thumb {
+			background: $border-color;
+			border-radius: 3px;
+
+			.dark-mode & {
+				background: $dark-border-color;
+			}
+		}
+	}
+
+	.menu-item {
+		display: flex;
+		align-items: center;
+		padding: 15px 20px;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		position: relative;
+		margin: 5px 10px;
+		border-radius: 12px;
+
+		&:hover {
+			background: linear-gradient(135deg, rgba($primary-color, 0.1), rgba($secondary-color, 0.1));
+		}
+
+		&.active {
+			background: linear-gradient(135deg, rgba($primary-color, 0.15), rgba($secondary-color, 0.15));
+			color: $primary-color;
+			font-weight: bold;
+
+			&::before {
+				content: '';
+				position: absolute;
+				left: 0;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 4px;
+				height: 60%;
+				background: linear-gradient(180deg, $primary-color, $secondary-color);
+				border-radius: 0 2px 2px 0;
+			}
+		}
+
+		.menu-icon {
+			font-size: 24px;
+			margin-right: 15px;
+		}
+
+		.menu-text {
+			font-size: 16px;
+			color: $text-primary;
+
+			.dark-mode & {
+				color: $dark-text-primary;
+			}
+		}
+	}
+
+	.menu-badge {
+		position: absolute;
+		right: 20px;
+		min-width: 20px;
+		height: 20px;
+		background: $primary-color;
+		color: #fff;
+		border-radius: 10px;
+		font-size: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 6px;
+		font-weight: bold;
+	}
+
+	/* 切换内门部分 */
+	.switch-door-section {
+		margin: 20px 10px;
+		padding: 15px;
+		background: linear-gradient(135deg, rgba($primary-color, 0.05), rgba($secondary-color, 0.05));
+		border-radius: 12px;
+		border: 1px dashed $primary-color;
+
+		.dark-mode & {
+			background: rgba($primary-color, 0.1);
+		}
+	}
+
+	.switch-door-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 12px 20px;
+		background: linear-gradient(135deg, $primary-color, $secondary-color);
+		color: #fff;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: all 0.3s ease;
+
+		&:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba($primary-color, 0.4);
+		}
+
+		.door-icon {
+			font-size: 20px;
+			margin-right: 8px;
+		}
+
+		.door-text {
+			font-size: 15px;
+			font-weight: bold;
+		}
+	}
+
+	.upgrade-tips {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+
+		.tips-title {
+			font-size: 14px;
+			font-weight: bold;
+			color: $primary-color;
+			margin-bottom: 5px;
+		}
+
+		.tips-item {
+			font-size: 13px;
+			color: $text-secondary;
+
+			.dark-mode & {
+				color: $dark-text-secondary;
+			}
+		}
+
+		.upgrade-btn {
+			margin-top: 10px;
+			padding: 8px 16px;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff;
+			border: none;
+			border-radius: 6px;
+			font-size: 13px;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: scale(1.02);
+			}
+		}
+	}
+
+	/* 右侧内容区 */
+	.right-content {
+		flex: 1;
+		margin-left: 260px;
+		padding: 20px;
+		min-height: calc(100vh - 60px);
+	}
+
+	/* 推文列表 */
+	.tweet-list {
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	.scroll-view {
+		height: calc(100vh - 100px);
+	}
+
+	.tweet-card {
+		padding: 20px;
+		border-bottom: 1px solid $border-color;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		position: relative;
+
+		.dark-mode & {
+			border-bottom-color: $dark-border-color;
+		}
+
+		&:hover {
+			background: linear-gradient(135deg, rgba($primary-color, 0.03), rgba($secondary-color, 0.03));
+		}
+
+		&:last-child {
+			border-bottom: none;
+		}
+	}
+
+	.tweet-header {
+		display: flex;
+		align-items: center;
+		margin-bottom: 15px;
+
+		.author-avatar {
+			width: 48px;
+			height: 48px;
+			border-radius: 50%;
+			border: 2px solid $primary-color;
+			margin-right: 12px;
+		}
+
+		.author-info {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+
+			.author-nickname {
+				font-size: 15px;
+				font-weight: bold;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+
+			.author-username {
+				font-size: 13px;
+				color: $text-muted;
+
+				.dark-mode & {
+					color: $dark-text-muted;
+				}
+			}
+		}
+
+		.tweet-time {
+			font-size: 13px;
+			color: $text-muted;
+
+			.dark-mode & {
+				color: $dark-text-muted;
+			}
+		}
+	}
+
+	.tweet-content {
+		margin-bottom: 15px;
+
+		.tweet-title {
+			font-size: 18px;
+			font-weight: bold;
+			color: $text-primary;
+			display: block;
+			margin-bottom: 10px;
+			line-height: 1.4;
+
+			.dark-mode & {
+				color: $dark-text-primary;
+			}
+		}
+
+		.tweet-description {
+			font-size: 15px;
+			color: $text-secondary;
+			line-height: 1.6;
+			display: block;
+			margin-bottom: 10px;
+
+			.dark-mode & {
+				color: $dark-text-secondary;
+			}
+		}
+	}
+
+	.tweet-images {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 12px;
+		position: relative;
+
+		.tweet-image-wrapper {
+			width: auto;
+			min-width: 100px;
+			height: 280px;
+			border-radius: 8px;
+			overflow: hidden;
+			flex-shrink: 0;
+			background: #f0f0f0;
+
+			&.video-wrapper {
+				width: 70%;
+				height: 300px;
+				min-width: auto;
+			}
+
+			.tweet-image {
+				height: 100%;
+				width: auto;
+				display: block;
+				transition: transform 0.3s ease;
+
+				&:hover {
+					transform: scale(1.02);
+				}
+			}
+
+			.tweet-video {
+				height: 100%;
+				width: auto;
+				display: block;
+			}
+
+			iframe.tweet-video {
+				width: 100%;
+				border: none;
+			}
+
+			video.tweet-video {
+				width: auto;
+				min-width: 150px;
+				object-fit: contain;
+				background: #000;
+			}
+		}
+
+		.tweet-video-full {
+			width: 100%;
+			height: 300px;
+			border-radius: 8px;
+			background: #000;
+			display: block;
+			border: none;
+			object-fit: contain;
+		}
+
+		.bilibili-video-wrapper {
+			position: relative;
+			width: 100%;
+			height: 300px;
+			border-radius: 8px;
+			overflow: hidden;
+
+			.bilibili-mask {
+				position: absolute; top: 0; left: 0; right: 0; bottom: 60px;
+				z-index: 10; cursor: default; background: transparent;
+			}
+
+			.bilibili-play-overlay {
+				position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+				z-index: 10; cursor: pointer;
+				display: flex; flex-direction: column; align-items: center; justify-content: center;
+				gap: 8px; background: rgba(0,0,0,0.55);
+
+				.bilibili-play-icon {
+					font-size: 44px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+				}
+				.bilibili-play-text {
+					font-size: 14px; color: #fff; opacity: 0.9;
+				}
+				&:hover { background: rgba(0,0,0,0.65); }
+			}
+		}
+
+		.more-images {
+			position: absolute;
+			bottom: 8px;
+			right: 8px;
+			background: rgba(0, 0, 0, 0.7);
+			color: #fff;
+			padding: 8px 16px;
+			border-radius: 8px;
+			font-size: 14px;
+			font-weight: bold;
+		}
+	}
+
+	.tweet-video-wrapper {
+		margin-top: 12px;
+		border-radius: 12px;
+		overflow: hidden;
+
+		.tweet-video {
+			width: 100%;
+			max-height: 400px;
+			background: #000;
+		}
+	}
+
+	.tweet-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 12px;
+
+		.tag-item {
+			color: $secondary-color;
+			font-size: 14px;
+			padding: 4px 12px;
+			background: rgba($secondary-color, 0.1);
+			border-radius: 12px;
+			font-weight: 500;
+		}
+	}
+
+	/* 推文列表A链接 */
+	.tweet-alist {
+		margin-top: 10px;
+		padding: 8px 12px;
+		background: $bg-light;
+		border-radius: 8px;
+		.dark-mode & { background: $dark-bg; }
+
+		.tweet-alist-item {
+			padding: 4px 0;
+			cursor: pointer;
+
+			.tweet-alist-link {
+				color: $primary-color;
+				font-size: 13px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				display: block;
+				.dark-mode & { color: lighten($primary-color, 10%); }
+				&:hover { text-decoration: underline; }
+			}
+		}
+	}
+
+	.tweet-actions {
+		display: flex;
+		gap: 30px;
+		padding-top: 15px;
+		border-top: 1px solid $border-color;
+
+		.dark-mode & {
+			border-top-color: $dark-border-color;
+		}
+
+		.action-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			cursor: pointer;
+			padding: 8px 12px;
+			border-radius: 20px;
+			transition: all 0.3s ease;
+
+			&:hover {
+				background: linear-gradient(135deg, rgba($primary-color, 0.1), rgba($secondary-color, 0.1));
+			}
+
+			.action-icon {
+				font-size: 18px;
+			}
+
+			.action-text {
+				font-size: 14px;
+				color: $text-secondary;
+				font-weight: 500;
+
+				.dark-mode & {
+					color: $dark-text-secondary;
+				}
+			}
+		}
+	}
+
+	/* 作者操作按钮 */
+	.tweet-author-actions {
+		display: flex; gap: 6px; margin-left: auto;
+
+		.author-action-btn {
+			padding: 4px 12px; border-radius: 12px; border: none;
+			font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.3s ease;
+			&:hover { opacity: 0.85; }
+			&.off { background: #e74c3c; color: #fff; }
+			&.on { background: #27ae60; color: #fff; }
+			&.del { background: #95a5a6; color: #fff; }
+		}
+	}
+
+	/* 管理员操作按钮 */
+	.tweet-admin-actions {
+		margin-left: 8px;
+
+		.admin-action-btn {
+			width: 32px; height: 32px; border-radius: 50%; border: none;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff; font-size: 14px; cursor: pointer; transition: all 0.3s ease;
+			display: flex; align-items: center; justify-content: center;
+			&:hover { transform: rotate(30deg); }
+		}
+	}
+
+	/* 状态标签（我的推文） */
+	.tweet-status-badge {
+		position: absolute; top: 10px; right: 10px;
+		padding: 3px 10px; border-radius: 10px;
+		font-size: 11px; font-weight: bold; color: #fff;
+		&.status-0 { background: #e74c3c; }
+		&.status-1 { background: #f39c12; }
+		&.status-2 { background: #27ae60; }
+		&.status-3 { background: #95a5a6; }
+	}
+
+	/* 推文详情页 */
+	.tweet-detail-page {
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	.detail-header {
+		padding: 15px 20px;
+		border-bottom: 1px solid $border-color;
+		position: sticky;
+		top: 0;
+		background: #fff;
+		z-index: 10;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			border-bottom-color: $dark-border-color;
+		}
+
+		.back-btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			cursor: pointer;
+			padding: 8px 16px;
+			border-radius: 8px;
+			transition: all 0.3s ease;
+
+			&:hover {
+				background: $bg-light;
+
+				.dark-mode & {
+					background: $dark-bg;
+				}
+			}
+
+			.back-icon {
+				font-size: 20px;
+				color: $primary-color;
+			}
+
+			.back-text {
+				font-size: 15px;
+				font-weight: 500;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+		}
+	}
+
+	.detail-scroll {
+		height: calc(100vh - 120px);
+		padding: 20px;
+	}
+
+	.detail-author {
+		display: flex;
+		align-items: center;
+		gap: 15px;
+		padding: 20px;
+		background: linear-gradient(135deg, rgba($primary-color, 0.05), rgba($secondary-color, 0.05));
+		border-radius: 12px;
+		margin-bottom: 20px;
+		cursor: pointer;
+		transition: all 0.3s ease;
+
+		&:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px $shadow-light;
+		}
+
+		.detail-avatar {
+			width: 64px;
+			height: 64px;
+			border-radius: 50%;
+			border: 3px solid $primary-color;
+		}
+
+		.detail-author-info {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+
+			.detail-nickname {
+				font-size: 18px;
+				font-weight: bold;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+
+			.detail-username {
+				font-size: 14px;
+				color: $text-muted;
+
+				.dark-mode & {
+					color: $dark-text-muted;
+				}
+			}
+
+			.detail-time {
+				font-size: 13px;
+				color: $text-muted;
+
+				.dark-mode & {
+					color: $dark-text-muted;
+				}
+			}
+		}
+	}
+
+	.detail-title {
+		font-size: 24px;
+		font-weight: bold;
+		color: $text-primary;
+		line-height: 1.4;
+		margin-bottom: 20px;
+
+		.dark-mode & {
+			color: $dark-text-primary;
+		}
+	}
+
+	.detail-images {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-bottom: 20px;
+
+		.detail-image {
+			width: 100%;
+			border-radius: 12px;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: scale(1.01);
+			}
+		}
+	}
+
+	.detail-video-wrapper {
+		margin-bottom: 20px;
+		border-radius: 12px;
+		overflow: hidden;
+
+		.detail-video {
+			width: 100%;
+			max-height: 500px;
+			background: #000;
+		}
+	}
+
+	.detail-content {
+		padding: 20px;
+		background: $bg-light;
+		border-radius: 12px;
+		margin-bottom: 20px;
+		line-height: 1.8;
+		color: $text-primary;
+
+		.dark-mode & {
+			background: $dark-bg;
+			color: $dark-text-primary;
+		}
+	}
+
+	.detail-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		margin-bottom: 20px;
+
+		.detail-tag {
+			font-size: 15px;
+			color: $secondary-color;
+			padding: 6px 16px;
+			background: rgba($secondary-color, 0.1);
+			border-radius: 16px;
+			font-weight: 500;
+		}
+	}
+
+	.detail-actions {
+		display: flex;
+		gap: 20px;
+		padding: 20px;
+		background: $bg-light;
+		border-radius: 12px;
+		margin-bottom: 20px;
+
+		.dark-mode & {
+			background: $dark-bg;
+		}
+
+		.action-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			cursor: pointer;
+			padding: 10px 20px;
+			border-radius: 20px;
+			background: #fff;
+			transition: all 0.3s ease;
+
+			.dark-mode & {
+				background: $dark-bg-secondary;
+			}
+
+			&:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 4px 12px $shadow-light;
+			}
+
+			.action-icon {
+				font-size: 20px;
+			}
+
+			.action-text {
+				font-size: 15px;
+				color: $text-primary;
+				font-weight: 500;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+		}
+	}
+
+	/* 评论输入 */
+	.comment-input-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 30px;
+		padding: 15px;
+		background: $bg-light;
+		border-radius: 12px;
+
+		.dark-mode & {
+			background: $dark-bg;
+		}
+
+		.reply-indicator {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 6px 12px;
+			background: rgba($primary-color, 0.08);
+			border-radius: 8px;
+			font-size: 13px;
+
+			.dark-mode & {
+				background: rgba($primary-color, 0.15);
+			}
+
+			.reply-indicator-text {
+				color: $primary-color;
+				font-weight: 500;
+				.dark-mode & { color: lighten($primary-color, 10%); }
+			}
+
+			.reply-cancel {
+				color: $text-muted;
+				cursor: pointer;
+				padding: 2px 8px;
+				.dark-mode & { color: $dark-text-muted; }
+				&:hover { color: #e74c3c; }
+			}
+		}
+
+		.comment-input-row {
+			display: flex;
+			gap: 12px;
+		}
+
+		.comment-input {
+			flex: 1;
+			height: 44px;
+			padding: 0 16px;
+			background: #fff;
+			border-radius: 22px;
+			border: 1px solid $border-color;
+			outline: none;
+			transition: all 0.3s ease;
+			color: $text-primary;
+
+			.dark-mode & {
+				background: $dark-bg-secondary;
+				border-color: $dark-border-color;
+				color: $dark-text-primary;
+			}
+
+			&:focus {
+				border-color: $primary-color;
+			}
+		}
+
+		.comment-submit {
+			padding: 0 24px;
+			height: 44px;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff;
+			border: none;
+			border-radius: 22px;
+			font-size: 15px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: scale(1.05);
+			}
+		}
+	}
+
+	/* 评论区 */
+	.comments-section {
+		.comments-header {
+			padding-bottom: 15px;
+			border-bottom: 2px solid $border-color;
+			margin-bottom: 20px;
+
+			.dark-mode & {
+				border-bottom-color: $dark-border-color;
+			}
+
+			.comments-title {
+				font-size: 18px;
+				font-weight: bold;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+		}
+	}
+
+	.comment-item {
+		display: flex;
+		gap: 12px;
+		margin-bottom: 20px;
+		padding: 15px;
+		background: $bg-light;
+		border-radius: 12px;
+		transition: all 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg;
+		}
+
+		&:hover {
+			box-shadow: 0 2px 8px $shadow-light;
+		}
+
+		.comment-avatar {
+			width: 40px;
+			height: 40px;
+			border-radius: 50%;
+			border: 2px solid $secondary-color;
+			flex-shrink: 0;
+		}
+
+		.comment-content-wrap {
+			flex: 1;
+		}
+
+		.comment-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			margin-bottom: 8px;
+
+			.comment-nickname {
+				font-size: 14px;
+				font-weight: bold;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+
+			.comment-time {
+				font-size: 12px;
+				color: $text-muted;
+
+				.dark-mode & {
+					color: $dark-text-muted;
+				}
+			}
+		}
+
+		.comment-content {
+			font-size: 14px;
+			color: $text-secondary;
+			line-height: 1.6;
+			margin-bottom: 10px;
+
+			.dark-mode & {
+				color: $dark-text-secondary;
+			}
+
+			.mention-user {
+				color: $secondary-color;
+				font-weight: 500;
+				margin-right: 4px;
+			}
+		}
+
+		.comment-images {
+			display: flex;
+			gap: 8px;
+			margin-bottom: 10px;
+			flex-wrap: wrap;
+
+			.comment-image {
+				width: 100px;
+				height: 100px;
+				border-radius: 8px;
+				cursor: pointer;
+				transition: all 0.3s ease;
+
+				&:hover {
+					transform: scale(1.05);
+				}
+			}
+		}
+
+		.comment-emoji {
+			width: 80px;
+			height: 80px;
+			margin-bottom: 10px;
+		}
+
+		.comment-actions {
+			display: flex;
+			gap: 20px;
+
+			.comment-action {
+				font-size: 13px;
+				color: $text-muted;
+				cursor: pointer;
+				transition: all 0.3s ease;
+
+				.dark-mode & {
+					color: $dark-text-muted;
+				}
+
+				&.delete-action {
+					color: #e74c3c;
+					.dark-mode & { color: #ff6b6b; }
+				}
+
+				&:hover {
+					color: $primary-color;
+				}
+			}
+		}
+	}
+
+	/* 回复区 */
+	.replies-section {
+		margin-top: 15px;
+		padding-left: 20px;
+		border-left: 2px solid $border-color;
+
+		.dark-mode & {
+			border-left-color: $dark-border-color;
+		}
+
+		.reply-item {
+			display: flex;
+			gap: 10px;
+			margin-bottom: 15px;
+
+			.reply-avatar {
+				width: 32px;
+				height: 32px;
+				border-radius: 50%;
+				border: 2px solid $secondary-color;
+				flex-shrink: 0;
+			}
+
+			.reply-content-wrap {
+				flex: 1;
+
+				.reply-header {
+					display: flex;
+					align-items: center;
+					justify-content: space-between;
+					margin-bottom: 5px;
+
+					.reply-nickname {
+						font-size: 13px;
+						font-weight: bold;
+						color: $text-primary;
+
+						.dark-mode & {
+							color: $dark-text-primary;
+						}
+					}
+
+					.reply-time {
+						font-size: 12px;
+						color: $text-muted;
+
+						.dark-mode & {
+							color: $dark-text-muted;
+						}
+					}
+				}
+
+				.reply-content {
+					font-size: 13px;
+					color: $text-secondary;
+					line-height: 1.5;
+					margin-bottom: 8px;
+
+					.dark-mode & {
+						color: $dark-text-secondary;
+					}
+
+					.mention-user {
+						color: $secondary-color;
+						font-weight: 500;
+						margin-right: 4px;
+					}
+				}
+
+				.reply-actions {
+					display: flex;
+					gap: 15px;
+
+					.reply-action {
+						font-size: 12px;
+						color: $text-muted;
+						cursor: pointer;
+						transition: all 0.3s ease;
+
+						.dark-mode & {
+							color: $dark-text-muted;
+						}
+
+						&.delete-action {
+							color: #e74c3c;
+							.dark-mode & { color: #ff6b6b; }
+						}
+
+						&:hover {
+							color: $secondary-color;
+						}
+					}
+				}
+			}
+		}
+
+		.load-more-replies {
+			display: block;
+			text-align: center;
+			padding: 10px;
+			color: $secondary-color;
+			font-size: 13px;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				text-decoration: underline;
+			}
+		}
+	}
+
+	.load-more-comments {
+		display: block;
+		text-align: center;
+		padding: 15px;
+		color: $primary-color;
+		font-size: 14px;
+		font-weight: 500;
+		cursor: pointer;
+		margin-top: 20px;
+		transition: all 0.3s ease;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+
+	/* 加载更多 */
+	.load-more,
+	.no-more {
+		text-align: center;
+		padding: 20px;
+		color: $text-muted;
+		font-size: 14px;
+
+		.dark-mode & {
+			color: $dark-text-muted;
+		}
+	}
+
+	/* 消息页面 */
+	.messages-page {
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	.message-tabs {
+		display: flex;
+		border-bottom: 1px solid $border-color;
+
+		.dark-mode & {
+			border-bottom-color: $dark-border-color;
+		}
+
+		.message-tab {
+			flex: 1;
+			text-align: center;
+			padding: 15px;
+			cursor: pointer;
+			position: relative;
+			transition: all 0.3s ease;
+			color: $text-secondary;
+			font-weight: 500;
+
+			.dark-mode & {
+				color: $dark-text-secondary;
+			}
+
+			&:hover {
+				background: $bg-light;
+
+				.dark-mode & {
+					background: $dark-bg;
+				}
+			}
+
+			&.active {
+				color: $primary-color;
+				font-weight: bold;
+
+				&::after {
+					content: '';
+					position: absolute;
+					bottom: 0;
+					left: 50%;
+					transform: translateX(-50%);
+					width: 60%;
+					height: 3px;
+					background: linear-gradient(90deg, $primary-color, $secondary-color);
+					border-radius: 2px 2px 0 0;
+				}
+			}
+
+			.tab-badge {
+				position: absolute;
+				top: 8px;
+				right: 20%;
+				min-width: 18px;
+				height: 18px;
+				background: $primary-color;
+				color: #fff;
+				border-radius: 9px;
+				font-size: 11px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 0 5px;
+				font-weight: bold;
+			}
+		}
+	}
+
+	.message-list {
+		height: calc(100vh - 160px);
+	}
+
+	.message-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 15px;
+		padding: 20px;
+		border-bottom: 1px solid $border-color;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		position: relative;
+
+		.dark-mode & {
+			border-bottom-color: $dark-border-color;
+		}
+
+		&:hover {
+			background: $bg-light;
+
+			.dark-mode & {
+				background: $dark-bg;
+			}
+		}
+
+		&.unread {
+			background: linear-gradient(135deg, rgba($primary-color, 0.05), rgba($secondary-color, 0.05));
+		}
+
+		.message-avatar {
+			width: 48px;
+			height: 48px;
+			border-radius: 50%;
+			border: 2px solid $secondary-color;
+			flex-shrink: 0;
+		}
+
+		.message-content-wrap {
+			flex: 1;
+
+			.message-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				margin-bottom: 8px;
+
+				.message-sender {
+					font-size: 15px;
+					font-weight: bold;
+					color: $text-primary;
+
+					.dark-mode & {
+						color: $dark-text-primary;
+					}
+				}
+
+				.message-time {
+					font-size: 13px;
+					color: $text-muted;
+
+					.dark-mode & {
+						color: $dark-text-muted;
+					}
+				}
+			}
+
+			.message-content {
+				font-size: 14px;
+				color: $text-secondary;
+				line-height: 1.5;
+
+				.dark-mode & {
+					color: $dark-text-secondary;
+				}
+
+				&.message-content-ellipsis {
+					overflow: hidden;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+				}
+			}
+		}
+
+		.unread-dot {
+			position: absolute;
+			right: 20px;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 8px;
+			height: 8px;
+			background: $primary-color;
+			border-radius: 50%;
+		}
+	}
+
+	/* 我的页面 */
+	.profile-page {
+		background: #fff;
+		border-radius: 16px;
+		padding: 30px;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	.profile-header {
+		text-align: center;
+		padding-bottom: 30px;
+		border-bottom: 2px solid $border-color;
+		margin-bottom: 30px;
+
+		.dark-mode & {
+			border-bottom-color: $dark-border-color;
+		}
+
+		.profile-avatar {
+			width: 120px;
+			height: 120px;
+			border-radius: 50%;
+			border: 4px solid $primary-color;
+			margin-bottom: 15px;
+		}
+
+		.profile-nickname {
+			display: block;
+			font-size: 24px;
+			font-weight: bold;
+			color: $text-primary;
+			margin-bottom: 5px;
+
+			.dark-mode & {
+				color: $dark-text-primary;
+			}
+		}
+
+		.profile-username {
+			display: block;
+			font-size: 16px;
+			color: $text-muted;
+			margin-bottom: 10px;
+
+			.dark-mode & {
+				color: $dark-text-muted;
+			}
+		}
+
+		.profile-level {
+			display: inline-block;
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff;
+			padding: 6px 20px;
+			border-radius: 20px;
+			font-size: 14px;
+			font-weight: bold;
+		}
+	}
+
+	.profile-head-edit {
+		padding: 16px 0;
+		border-bottom: 1px solid $border-color;
+		margin-bottom: 16px;
+		.dark-mode & { border-bottom-color: $dark-border-color; }
+
+		.info-label {
+			display: block; font-size: 15px; color: $text-secondary; font-weight: 500; margin-bottom: 8px;
+			.dark-mode & { color: $dark-text-secondary; }
+		}
+
+		.info-input {
+			width: 100%; height: 40px; padding: 0 15px;
+			background: #fff; border-radius: 8px; border: 1px solid $border-color; outline: none;
+			.dark-mode & { background: $dark-bg-secondary; border-color: $dark-border-color; color: $dark-text-primary; }
+			&:focus { border-color: $primary-color; }
+		}
+
+		.head-edit-actions {
+			margin-top: 10px;
+			.choose-img-btn {
+				padding: 8px 20px; border-radius: 8px; border: none;
+				background: linear-gradient(135deg, $primary-color, $secondary-color);
+				color: #fff; font-size: 13px; cursor: pointer; transition: all 0.3s ease;
+				&:hover { opacity: 0.85; transform: translateY(-1px); }
+			}
+		}
+	}
+
+	.edit-warning {
+		display: block; margin-top: 6px; font-size: 12px; color: #e74c3c; line-height: 1.4;
+		.info-item & { width: 100%; }
+	}
+
+	.profile-info {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+
+		.info-item {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 15px;
+			padding: 15px;
+			background: $bg-light;
+			border-radius: 12px;
+
+			.dark-mode & {
+				background: $dark-bg;
+			}
+
+			.info-label {
+				width: 80px;
+				font-size: 15px;
+				color: $text-secondary;
+				font-weight: 500;
+				flex-shrink: 0;
+
+				.dark-mode & {
+					color: $dark-text-secondary;
+				}
+			}
+
+			.info-value {
+				flex: 1;
+				font-size: 15px;
+				color: $text-primary;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+
+			.info-input {
+				flex: 1;
+				height: 40px;
+				padding: 0 15px;
+				background: #fff;
+				border-radius: 8px;
+				border: 1px solid $border-color;
+				outline: none;
+				transition: all 0.3s ease;
+
+				.dark-mode & {
+					background: $dark-bg-secondary;
+					border-color: $dark-border-color;
+					color: $dark-text-primary;
+				}
+
+				&:focus {
+					border-color: $primary-color;
+				}
+			}
+		}
+	}
+
+	.profile-actions {
+		margin-top: 30px;
+		display: flex;
+		gap: 15px;
+		justify-content: center;
+
+		button {
+			padding: 12px 30px;
+			border-radius: 25px;
+			border: none;
+			font-size: 15px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: translateY(-2px);
+			}
+		}
+
+		.edit-btn {
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff;
+		}
+
+		.save-btn {
+			background: linear-gradient(135deg, #17bf63, #4ECDC4);
+			color: #fff;
+		}
+
+		.cancel-btn {
+			background: $bg-light;
+			color: $text-primary;
+
+			.dark-mode & {
+				background: $dark-bg;
+				color: $dark-text-primary;
+			}
+		}
+	}
+
+	/* 设置页面 */
+	.settings-page {
+		background: #fff;
+		border-radius: 16px;
+		padding: 30px;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+
+		.setting-item {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 20px;
+			border-bottom: 1px solid $border-color;
+
+			.dark-mode & {
+				border-bottom-color: $dark-border-color;
+			}
+
+			.setting-label {
+				font-size: 15px;
+				color: $text-primary;
+				font-weight: 500;
+
+				.dark-mode & {
+					color: $dark-text-primary;
+				}
+			}
+
+			.clear-btn {
+				padding: 8px 20px;
+				background: $bg-light;
+				border: none;
+				border-radius: 20px;
+				font-size: 14px;
+				cursor: pointer;
+				transition: all 0.3s ease;
+
+				.dark-mode & {
+					background: $dark-bg;
+					color: $dark-text-primary;
+				}
+
+				&:hover {
+					background: $border-color;
+
+					.dark-mode & {
+						background: $dark-border-color;
+					}
+				}
+			}
+		}
+
+		.logout-btn {
+			width: 100%;
+			margin-top: 30px;
+			padding: 15px;
+			background: linear-gradient(135deg, #ff4444, #ff6b6b);
+			color: #fff;
+			border: none;
+			border-radius: 25px;
+			font-size: 16px;
+			font-weight: bold;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 4px 12px rgba(#ff4444, 0.4);
+			}
+		}
+	}
+
+	/* 弹窗通用样式 */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(4px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 2000;
+		animation: fadeIn 0.3s ease;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+
+		to {
+			opacity: 1;
+		}
+	}
+
+	.publish-modal,
+	.author-modal,
+	.upgrade-modal {
+		background: #fff;
+		border-radius: 20px;
+		width: 90%;
+		max-width: 600px;
+		max-height: 80vh;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		animation: slideUp 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+		}
+	}
+
+	@keyframes slideUp {
+		from {
+			transform: translateY(30px);
+			opacity: 0;
+		}
+
+		to {
+			transform: translateY(0);
+			opacity: 1;
+		}
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 20px;
+		border-bottom: 1px solid $border-color;
+
+		.dark-mode & {
+			border-bottom-color: $dark-border-color;
+		}
+
+		.modal-title {
+			font-size: 18px;
+			font-weight: bold;
+			color: $text-primary;
+
+			.dark-mode & {
+				color: $dark-text-primary;
+			}
+		}
+
+		.modal-close {
+			font-size: 32px;
+			color: $text-muted;
+			cursor: pointer;
+			line-height: 1;
+			transition: all 0.3s ease;
+
+			&:hover {
+				color: $primary-color;
+				transform: rotate(90deg);
+			}
+		}
+	}
+
+	.modal-content {
+		flex: 1;
+		padding: 20px;
+		overflow-y: auto;
+
+		&::-webkit-scrollbar {
+			width: 6px;
+		}
+
+		&::-webkit-scrollbar-thumb {
+			background: $border-color;
+			border-radius: 3px;
+
+			.dark-mode & {
+				background: $dark-border-color;
+			}
+		}
+	}
+
+	/* 发布推文弹窗 */
+	.publish-input {
+		width: 100%;
+		height: 50px;
+		padding: 0 16px;
+		background: $bg-light;
+		border-radius: 12px;
+		border: 1px solid $border-color;
+		outline: none;
+		font-size: 16px;
+		margin-bottom: 15px;
+		transition: all 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg;
+			border-color: $dark-border-color;
+			color: $dark-text-primary;
+		}
+
+		&:focus {
+			border-color: $primary-color;
+		}
+	}
+
+	.publish-textarea {
+		width: 100%;
+		min-height: 100px;
+		padding: 15px;
+		background: $bg-light;
+		border-radius: 12px;
+		border: 1px solid $border-color;
+		outline: none;
+		font-size: 15px;
+		resize: vertical;
+		margin-bottom: 15px;
+		transition: all 0.3s ease;
+
+		.dark-mode & {
+			background: $dark-bg;
+			border-color: $dark-border-color;
+			color: $dark-text-primary;
+		}
+
+		&:focus {
+			border-color: $primary-color;
+		}
+	}
+
+	.publish-content {
+		@extend .publish-textarea;
+		min-height: 200px;
+	}
+
+	.option-item {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-bottom: 14px;
+
+		> text:first-child {
+			font-size: 14px;
+			color: $text-secondary;
+			.dark-mode & { color: $dark-text-secondary; }
+			margin-bottom: 4px;
+		}
+
+		.tag-input {
+			height: 50px;
+			flex: 1;
+			padding: 0 12px;
+			background: $bg-light;
+			border: 1px solid $border-color;
+			border-radius: 6px;
+			font-size: 13px;
+			outline: none;
+			color: $text-primary;
+			.dark-mode & { background: $dark-bg; border-color: $dark-border-color; color: $dark-text-primary; }
+		}
+		.tag-input2 {
+			height: 50px;
+			padding: 0 12px;
+			background: $bg-light;
+			border: 1px solid $border-color;
+			border-radius: 6px;
+			font-size: 13px;
+			outline: none;
+			color: $text-primary;
+			.dark-mode & { background: $dark-bg; border-color: $dark-border-color; color: $dark-text-primary; }
+		}
+	}
+
+	.tags-display {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 10px;
+
+		.tag-chip {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			background: linear-gradient(135deg, rgba($primary-color, 0.1), rgba($secondary-color, 0.1));
+			color: $secondary-color;
+			padding: 6px 12px;
+			border-radius: 16px;
+			font-size: 13px;
+			font-weight: 500;
+
+			.tag-remove {
+				cursor: pointer;
+				font-weight: bold;
+				font-size: 16px;
+				transition: all 0.3s ease;
+
+				&:hover {
+					color: $primary-color;
+				}
+			}
+		}
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 15px;
+		padding: 20px;
+		border-top: 1px solid $border-color;
+
+		.dark-mode & {
+			border-top-color: $dark-border-color;
+		}
+
+		button {
+			flex: 1;
+			padding: 12px;
+			border-radius: 25px;
+			border: none;
+			font-size: 15px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.3s ease;
+
+			&:hover {
+				transform: translateY(-2px);
+			}
+		}
+
+		.cancel-btn {
+			background: $bg-light;
+			color: $text-primary;
+
+			.dark-mode & {
+				background: $dark-bg;
+				color: $dark-text-primary;
+			}
+		}
+
+		.submit-btn {
+			background: linear-gradient(135deg, $primary-color, $secondary-color);
+			color: #fff;
+
+			&:hover {
+				box-shadow: 0 4px 12px rgba($primary-color, 0.4);
+			}
+		}
+	}
+
+	/* 通知详情页 */
+	.notify-detail-page {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+
+		.dark-mode & {
+			background: $dark-bg-secondary;
+			box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		}
+
+		.notify-detail-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 12px 16px;
+			border-bottom: 1px solid $border-color;
+			.dark-mode & { border-bottom-color: $dark-border-color; }
+
+			.notify-detail-back {
+				font-size: 15px;
+				color: $primary-color;
+				cursor: pointer;
+				&:hover { opacity: 0.8; }
+			}
+
+			.notify-detail-title {
+				font-size: 16px;
+				font-weight: bold;
+				color: $text-primary;
+				.dark-mode & { color: $dark-text-primary; }
+			}
+		}
+
+		.notify-detail-scroll {
+			flex: 1;
+			padding: 20px;
+			overflow-y: auto;
+
+			.notify-detail-time {
+				font-size: 13px;
+				color: $text-muted;
+				text-align: center;
+				margin-bottom: 20px;
+				.dark-mode & { color: $dark-text-muted; }
+			}
+
+			.notify-detail-body {
+				font-size: 15px;
+				line-height: 1.8;
+				color: $text-primary;
+				.dark-mode & { color: $dark-text-primary; }
+
+				.notify-md-content {
+					word-break: break-word;
+
+					h1, h2, h3 {
+						margin: 16px 0 8px;
+						font-weight: bold;
+						.dark-mode & { color: $dark-text-primary; }
+					}
+					h1 { font-size: 22px; }
+					h2 { font-size: 19px; }
+					h3 { font-size: 17px; }
+
+					p { margin-bottom: 12px; }
+
+					pre {
+						background: #f5f5f5;
+						padding: 14px;
+						border-radius: 8px;
+						overflow-x: auto;
+						margin: 12px 0;
+						.dark-mode & { background: #1a1a2e; }
+						code { background: none; padding: 0; }
+					}
+
+					code {
+						background: rgba($primary-color, 0.1);
+						padding: 2px 6px;
+						border-radius: 4px;
+						font-size: 13px;
+					}
+
+					ul {
+						padding-left: 20px;
+						margin: 8px 0;
+						li { margin-bottom: 4px; }
+					}
+
+					strong { font-weight: bold; }
+					em { font-style: italic; }
+				}
+			}
+		}
+	}
+
+	/* 聊天页面 */
+	.chat-page {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+
+		.chat-page-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 12px 16px;
+			border-bottom: 1px solid $border-color;
+			.dark-mode & { border-bottom-color: $dark-border-color; }
+
+			.chat-page-back {
+				font-size: 15px;
+				color: $primary-color;
+				cursor: pointer;
+				&:hover { opacity: 0.8; }
+			}
+
+			.chat-page-title {
+				font-size: 16px;
+				font-weight: bold;
+				color: $text-primary;
+				.dark-mode & { color: $dark-text-primary; }
+			}
+		}
+
+		.chat-page-messages {
+			flex: 1;
+			padding: 15px 16px;
+			overflow-y: auto;
+			background: $bg-light;
+			.dark-mode & { background: $dark-bg; }
+
+			.chat-msg {
+				display: flex;
+				gap: 10px;
+				margin-bottom: 15px;
+
+				&.chat-msg-self {
+					flex-direction: row-reverse;
+
+					.chat-bubble {
+						background: #E9F9EF;
+						// color: #fff;
+						border-radius: 16px 4px 16px 16px;
+					}
+
+					.chat-msg-time {
+						text-align: right;
+					}
+				}
+
+				.chat-avatar {
+					width: 36px;
+					height: 36px;
+					border-radius: 50%;
+					flex-shrink: 0;
+				}
+
+				.chat-bubble {
+					max-width: 70%;
+					padding: 10px 14px;
+					background: #fff;
+					border-radius: 4px 16px 16px 16px;
+					box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+					.dark-mode & {
+						background: $dark-bg-secondary;
+						color: $dark-text-primary;
+					}
+
+					.chat-msg-text {
+						font-size: 14px;
+						display: block;
+						word-break: break-word;
+					}
+
+					.chat-msg-time {
+						font-size: 11px;
+						color: $text-muted;
+						margin-top: 4px;
+						display: block;
+						.dark-mode & { color: $dark-text-muted; }
+					}
+				}
+			}
+		}
+
+		.chat-page-input-bar {
+			display: flex;
+			gap: 10px;
+			padding: 12px 16px;
+			border-top: 1px solid $border-color;
+			.dark-mode & { border-top-color: $dark-border-color; }
+
+			.chat-page-input {
+				flex: 1;
+				height: 40px;
+				padding: 0 14px;
+				border-radius: 20px;
+				border: 1px solid $border-color;
+				outline: none;
+				font-size: 14px;
+				background: $bg-light;
+				color: $text-primary;
+				.dark-mode & {
+					background: $dark-bg;
+					border-color: $dark-border-color;
+					color: $dark-text-primary;
+				}
+			}
+
+			.chat-page-send {
+				height: 40px;
+				padding: 0 20px;
+				border-radius: 20px;
+				border: none;
+				background: linear-gradient(135deg, $primary-color, $secondary-color);
+				color: #fff;
+				font-size: 14px;
+				font-weight: 500;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				&:hover {
+					opacity: 0.9;
+					transform: translateY(-1px);
+				}
+			}
+		}
+	}
+
+	/* 未读数量徽标 */
+	.unread-badge {
+		min-width: 18px;
+		height: 18px;
+		padding: 0 6px;
+		border-radius: 9px;
+		background: $primary-color;
+		color: #fff;
+		font-size: 11px;
+		font-weight: bold;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	/* 作者页面 */
+	.author-page {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+		.dark-mode & { background: $dark-bg-secondary; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+
+		.author-page-header {
+			display: flex;
+			align-items: center; justify-content: space-between;
+			padding: 12px 16px;
+			border-bottom: 1px solid $border-color;
+			.dark-mode & { border-bottom-color: $dark-border-color; }
+
+			.author-page-back {
+				font-size: 15px; color: $primary-color; cursor: pointer;
+				&:hover { opacity: 0.8; }
+			}
+			.author-page-title {
+				font-size: 16px; font-weight: bold; color: $text-primary;
+				.dark-mode & { color: $dark-text-primary; }
+			}
+		}
+
+		.author-page-profile {
+			text-align: center;
+			padding: 24px 20px 16px;
+			border-bottom: 1px solid $border-color;
+			background: linear-gradient(135deg, rgba($primary-color,0.05), rgba($secondary-color,0.05));
+			.dark-mode & { border-bottom-color: $dark-border-color; }
+
+			.author-page-avatar {
+				width: 80px; height: 80px; border-radius: 50%;
+				border: 3px solid $primary-color; margin-bottom: 10px;
+			}
+			.author-page-name {
+				display: block; font-size: 18px; font-weight: bold; color: $text-primary; margin-bottom: 4px;
+				.dark-mode & { color: $dark-text-primary; }
+			}
+			.author-page-username {
+				display: block; font-size: 13px; color: $text-muted; margin-bottom: 12px;
+				.dark-mode & { color: $dark-text-muted; }
+			}
+			.author-page-mention {
+				background: linear-gradient(135deg, $primary-color, $secondary-color);
+				color: #fff; padding: 8px 28px; border-radius: 20px; border: none;
+				font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.3s ease;
+				&:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba($primary-color,0.4); }
+			}
+		}
+
+		.author-page-works {
+			flex: 1; padding: 12px 16px; overflow-y: auto;
+
+			.author-work-item {
+				display: flex; gap: 12px;
+				padding: 12px; border-radius: 12px;
+				margin-bottom: 10px; cursor: pointer; transition: all 0.3s ease;
+				background: $bg-light;
+				.dark-mode & { background: $dark-bg; }
+				&:hover { transform: translateX(4px); box-shadow: 0 2px 8px $shadow-light; }
+
+				.author-work-left {
+					flex-shrink: 0;
+					.author-work-cover {
+						width: 80px; height: 80px; border-radius: 8px;
+						border: 2px solid $secondary-color;
+					}
+				}
+				.author-work-right {
+					flex: 1; display: flex; flex-direction: column; gap: 6px;
+					.author-work-title {
+						font-size: 15px; color: $text-primary; font-weight: 500;
+						.dark-mode & { color: $dark-text-primary; }
+					}
+					.author-work-meta {
+						display: flex; gap: 12px; font-size: 12px; color: $text-muted;
+						.dark-mode & { color: $dark-text-muted; }
+					}
+				}
+			}
+
+			.author-work-loading, .author-work-nomore {
+				text-align: center; padding: 16px; font-size: 13px; color: $text-muted;
+				.dark-mode & { color: $dark-text-muted; }
+			}
+		}
+	}
+
+	/* 管理员审核页面 */
+	.admin-page {
+		background: #fff;
+		border-radius: 16px;
+		overflow: hidden;
+		box-shadow: 0 2px 12px $shadow-light;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		width: 100%;
+		.dark-mode & { background: $dark-bg-secondary; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+
+		.admin-tabs {
+			border-bottom: 1px solid $border-color;
+			.dark-mode & { border-bottom-color: $dark-border-color; }
+
+			.admin-tab-row {
+				display: flex;
+
+				.admin-tab {
+					flex: 1; text-align: center; padding: 10px 4px;
+					font-size: 13px; font-weight: bold; cursor: pointer;
+					color: $text-muted; transition: all 0.3s ease;
+					border-bottom: 2px solid transparent;
+					.dark-mode & { color: $dark-text-muted; }
+					&.active { color: $primary-color; border-bottom-color: $primary-color; background: rgba($primary-color,0.05); }
+					&:hover { color: $primary-color; background: rgba($primary-color,0.03); }
+				}
+			}
+		}
+
+		.admin-list {
+			flex: 1; padding: 12px; overflow-y: auto;
+
+			.admin-card {
+				padding: 14px; border-radius: 12px;
+				margin-bottom: 10px; background: $bg-light; cursor: pointer;
+				.dark-mode & { background: $dark-bg; }
+
+				.admin-card-top {
+					display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+					flex-wrap: wrap;
+
+					.admin-card-avatar {
+						width: 36px; height: 36px; border-radius: 50%;
+						border: 2px solid $secondary-color; flex-shrink: 0;
+					}
+					.admin-card-user { flex: 1; min-width: 80px; }
+					.admin-card-nickname { display: block; font-size: 14px; font-weight: bold; color: $text-primary; .dark-mode & { color: $dark-text-primary; } }
+					.admin-card-username { display: block; font-size: 12px; color: $text-muted; .dark-mode & { color: $dark-text-muted; } }
+					.admin-card-level { font-size: 12px; color: $text-muted; .dark-mode & { color: $dark-text-muted; } }
+					.admin-card-status { font-size: 11px; color: $text-muted; .dark-mode & { color: $dark-text-muted; } }
+				}
+
+				.admin-card-content {
+					display: block; font-size: 13px; color: $text-secondary;
+					margin-bottom: 10px; line-height: 1.5;
+					.dark-mode & { color: $dark-text-secondary; }
+				}
+
+				.admin-card-actions {
+					display: flex; gap: 8px;
+
+					.admin-btn {
+						flex: 1; padding: 6px 0; border-radius: 16px;
+						border: none; font-size: 12px; font-weight: 500; cursor: pointer;
+						transition: all 0.3s ease;
+						&:hover { opacity: 0.85; }
+						&.approve { background: #27ae60; color: #fff; }
+						&.reject { background: #e74c3c; color: #fff; }
+						&.setlevel { background: #f39c12; color: #fff; }
+					}
+				}
+			}
+
+			.admin-loading {
+				text-align: center; padding: 14px; font-size: 13px; color: $text-muted;
+				.dark-mode & { color: $dark-text-muted; }
+			}
+		}
+	}
+
+	/* 审核弹窗 */
+	.review-modal {
+		background: #fff; border-radius: 16px; width: 90%; max-width: 440px;
+		animation: slideUp 0.3s ease;
+		.dark-mode & { background: $dark-bg-secondary; }
+
+		.review-body {
+			padding: 16px 20px;
+
+			.review-info {
+				display: block; font-size: 13px; color: $text-secondary; margin-bottom: 8px;
+				.dark-mode & { color: $dark-text-secondary; }
+			}
+
+			.review-field {
+				margin-top: 12px;
+
+				.review-label {
+					display: block; font-size: 13px; font-weight: bold; color: $text-primary; margin-bottom: 6px;
+					.dark-mode & { color: $dark-text-primary; }
+				}
+
+				.review-input {
+					width: 100%; height: 38px; padding: 0 12px;
+					border: 1px solid $border-color; border-radius: 8px; outline: none;
+					font-size: 14px; background: $bg-light; color: $text-primary;
+					.dark-mode & { background: $dark-bg; border-color: $dark-border-color; color: $dark-text-primary; }
+				}
+			}
+
+			.review-notify-row {
+				.review-toggle {
+					display: flex; align-items: center; gap: 10px; cursor: pointer;
+
+					.review-toggle-track {
+						width: 44px; height: 24px; border-radius: 12px;
+						background: #ccc; position: relative;
+						transition: background 0.3s ease; flex-shrink: 0;
+						.dark-mode & { background: #555; }
+						&.on { background: $primary-color; }
+
+						.review-toggle-thumb {
+							width: 20px; height: 20px; border-radius: 50%;
+							background: #fff; position: absolute; top: 2px; left: 2px;
+							transition: left 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+							.on & { left: 22px; }
+						}
+					}
+
+					.review-toggle-label {
+						font-size: 13px; color: $text-secondary;
+						.dark-mode & { color: $dark-text-secondary; }
+					}
+				}
+			}
+
+			.admin-sl-status-options {
+				display: flex; gap: 8px; flex-wrap: wrap;
+
+				.admin-sl-status-option {
+					padding: 6px 14px; border-radius: 16px; font-size: 12px; cursor: pointer;
+					border: 1px solid $border-color; color: $text-secondary; transition: all 0.3s ease;
+					.dark-mode & { border-color: $dark-border-color; color: $dark-text-secondary; }
+					&.active { background: $primary-color; color: #fff; border-color: $primary-color; }
+					&:hover:not(.active) { border-color: $primary-color; color: $primary-color; }
+				}
+			}
+		}
+	}
+
+	/* 升级提示弹窗 */
+	.upgrade-modal {
+		max-width: 400px;
+
+		.upgrade-content {
+			padding: 20px;
+
+			.upgrade-tip {
+				display: block;
+				font-size: 15px;
+				color: $text-secondary;
+				margin-bottom: 20px;
+
+				.dark-mode & {
+					color: $dark-text-secondary;
+				}
+			}
+
+			.upgrade-option {
+				display: flex;
+				align-items: center;
+				gap: 15px;
+				padding: 20px;
+				background: $bg-light;
+				border-radius: 12px;
+				margin-bottom: 15px;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				border: 2px solid transparent;
+
+				.dark-mode & {
+					background: $dark-bg;
+				}
+
+				&:hover {
+					border-color: $primary-color;
+					transform: translateY(-2px);
+					box-shadow: 0 4px 12px $shadow-light;
+				}
+
+				.option-icon {
+					font-size: 32px;
+				}
+
+				.option-info {
+					flex: 1;
+					display: flex;
+					flex-direction: column;
+					gap: 5px;
+
+					.option-title {
+						font-size: 16px;
+						font-weight: bold;
+						color: $text-primary;
+
+						.dark-mode & {
+							color: $dark-text-primary;
+						}
+					}
+
+					.option-desc {
+						font-size: 13px;
+						color: $text-muted;
+
+						.dark-mode & {
+							color: $dark-text-muted;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/* 响应式设计 */
+	@media (max-width: 768px) {
+		.left-sidebar {
+			width: 80px;
+
+			.menu-text {
+				display: none;
+			}
+
+			.switch-door-section {
+
+				.switch-door-btn .door-text,
+				.upgrade-tips {
+					display: none;
+				}
+			}
+		}
+
+		.right-content {
+			margin-left: 80px;
+		}
+
+		.search-box {
+			max-width: 300px;
+		}
+
+		.user-detail {
+			display: none;
+		}
+
+		.tweet-images {
+			.tweet-image-wrapper {
+				height: 120px;
+				&.video-wrapper { height: 200px; width: 100%; }
+			}
+		}
+	}
+
+// ====== 发布弹窗新增样式 ======
+
+.mediaurl-row, .alist-row {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+	flex-wrap: wrap;
+
+	.tag-input {
+		flex: 1;
+		min-width: 100px;
+		height: 32px;
+		padding: 0 10px;
+		background: $bg-light;
+		border: 1px solid $border-color;
+		border-radius: 6px;
+		font-size: 13px;
+		outline: none;
+		.dark-mode & { background: $dark-bg; border-color: $dark-border-color; color: $dark-text-primary; }
+	}
+
+	.alist-title-input { flex: 0.4; }
+	.alist-url-input { flex: 1; }
+
+	.parse-btn {
+		white-space: nowrap;
+		padding: 4px 12px;
+		background: $primary-color;
+		color: #fff;
+		border-radius: 6px;
+		font-size: 12px;
+		cursor: pointer;
+		line-height: 24px;
+	}
+	.file-btn { background: #4ECDC4; }
+	.inner-btn { background: #2196F3; }
+}
+
+.mediaurl-preview, .alist-preview {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 6px;
+}
+
+.mediaurl-item {
+	position: relative;
+	width: 72px;
+	height: 72px;
+	border-radius: 6px;
+	overflow: hidden;
+	border: 1px solid $border-color;
+
+	.mediaurl-thumb {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.video-thumb {
+		background: #000;
+	}
+	.mediaurl-remove {
+		position: absolute;
+		top: 2px;
+		right: 2px;
+		width: 18px;
+		height: 18px;
+		background: rgba(0,0,0,0.6);
+		color: #fff;
+		border-radius: 50%;
+		font-size: 14px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
+}
+
+.alist-preview-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 4px 8px;
+	background: $bg-light;
+	border-radius: 6px;
+	font-size: 13px;
+	.dark-mode & { background: $dark-bg; }
+
+	.alist-preview-idx { color: $text-muted; }
+	.alist-preview-text { color: $text-primary; font-weight: 500; .dark-mode & { color: $dark-text-primary; } }
+	.alist-preview-url { color: $primary-color; cursor: pointer; }
+}
+
+/* 详情页微信卡片风格图片网格 */
+.detail-image-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.detail-image-item {
+	width: calc(33.33% - 4px);
+	border-radius: 8px;
+	overflow: hidden;
+	cursor: pointer;
+}
+
+.detail-image {
+	width: 100%;
+	height: auto;
+	display: block;
+	border-radius: 8px;
+	transition: transform 0.3s ease;
+
+	&:hover {
+		transform: scale(1.02);
+	}
+}
+
+.detail-video-full {
+	width: 100%;
+	height: 300px;
+	border-radius: 8px;
+	background: #000;
+	display: block;
+	border: none;
+	object-fit: contain;
+}
+
+.detail-video-full-item {
+	width: 70% !important;
+}
+
+.detail-image-grid .bilibili-video-wrapper {
+	position: relative;
+	width: 100%;
+	height: 300px;
+	border-radius: 8px;
+	overflow: hidden;
+
+	.bilibili-mask {
+		position: absolute; top: 0; left: 0; right: 0; bottom: 12px;
+		z-index: 10; cursor: default; background: transparent;
+	}
+
+	.bilibili-play-overlay {
+		position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+		z-index: 10; cursor: pointer;
+		display: flex; flex-direction: column; align-items: center; justify-content: center;
+		gap: 8px; background: rgba(0,0,0,0.55);
+
+		.bilibili-play-icon {
+			font-size: 44px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+		}
+		.bilibili-play-text {
+			font-size: 14px; color: #fff; opacity: 0.9;
+		}
+		&:hover { background: rgba(0,0,0,0.65); }
+	}
+}
+
+/* 详情页链接列表 */
+.detail-alist {
+	padding: 12px 16px;
+	background: $bg-light;
+	border-radius: 8px;
+	margin: 12px 0;
+	.dark-mode & { background: $dark-bg; }
+}
+
+.detail-alist-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 0;
+	font-size: 14px;
+}
+
+.detail-alist-index {
+	color: $text-muted;
+	.dark-mode & { color: $dark-text-muted; }
+}
+
+.detail-alist-text {
+	color: $primary-color;
+	cursor: pointer;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	.dark-mode & { color: $primary-color; }
+}
+
+/* 推文列表媒体展示 */
+.tweet-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 10px;
+	position: relative;
+}
+
+.tweet-image-wrapper {
+	width: auto;
+	min-width: 100px;
+	height: 180px;
+	border-radius: 8px;
+	overflow: hidden;
+	flex-shrink: 0;
+	background: #f0f0f0;
+
+	&.video-wrapper {
+ 		width: 70%;
+ 		height: 300px;
+ 		min-width: auto;
+ 	}
+ }
+
+ .tweet-image {
+	height: 100%;
+	width: auto;
+	display: block;
+}
+
+.tweet-video {
+	height: 100%;
+	width: auto;
+	display: block;
+}
+
+iframe.tweet-video {
+	width: 100%;
+	border: none;
+}
+
+video.tweet-video {
+	width: auto;
+	min-width: 150px;
+	object-fit: contain;
+	background: #000;
+}
+
+.more-images {
+	position: absolute;
+	right: 8px;
+	bottom: 8px;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	padding: 4px 8px;
+	border-radius: 12px;
+	font-size: 12px;
+}
+
+/* 媒体选择按钮 */
+.media-buttons {
+	display: flex;
+	gap: 10px;
+	margin: 10px 0;
+}
+
+.media-hint {
+	color: $text-muted;
+	font-size: 13px;
+	padding: 10px 0;
+	.dark-mode & { color: $dark-text-muted; }
+}
+
+.mediaurl-id {
+	font-size: 10px;
+	color: $text-muted;
+	text-align: center;
+	padding: 2px;
+	.dark-mode & { color: $dark-text-muted; }
+}
+</style>
